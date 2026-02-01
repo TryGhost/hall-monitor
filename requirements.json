@@ -1,13 +1,13 @@
 {
   "project": "hall-monitor",
   "version": "0.1.0",
-  "lastUpdated": "2025-02-01",
+  "lastUpdated": "2026-02-01",
   "requirements": [
     {
       "id": "CORE-001",
       "category": "core",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "CLI entry point with configuration",
       "description": "The tool runs as a CLI command: `hall-monitor --url <discourse-url>`. It accepts a Discourse root URL as a required argument and optional flags for API key, output format, severity threshold, and category/tag filters. Configuration can also be read from a `.hall-monitor.json` file in the current directory.",
       "acceptanceCriteria": [

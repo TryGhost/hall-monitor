@@ -1,0 +1,194 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type CliFlags, loadConfigFile, resolveConfig } from "./config.js";
+
+describe("loadConfigFile", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "hall-monitor-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true });
+	});
+
+	it("returns empty object when no config file exists and no path specified", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = loadConfigFile();
+			expect(config).toEqual({});
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("throws when explicit config path does not exist", () => {
+		expect(() => loadConfigFile("/nonexistent/path.json")).toThrow("Config file not found");
+	});
+
+	it("loads and validates a config file", () => {
+		const configPath = join(tempDir, ".hall-monitor.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				url: "https://forum.example.com",
+				apiKey: "test-key",
+				severityThreshold: "high",
+			}),
+		);
+
+		const config = loadConfigFile(configPath);
+		expect(config).toEqual({
+			url: "https://forum.example.com",
+			apiKey: "test-key",
+			severityThreshold: "high",
+		});
+	});
+
+	it("throws on invalid JSON", () => {
+		const configPath = join(tempDir, "bad.json");
+		writeFileSync(configPath, "not json{{{");
+		expect(() => loadConfigFile(configPath)).toThrow("Invalid JSON");
+	});
+
+	it("throws when config is not an object", () => {
+		const configPath = join(tempDir, "array.json");
+		writeFileSync(configPath, "[]");
+		expect(() => loadConfigFile(configPath)).toThrow("must contain a JSON object");
+	});
+
+	it("throws on invalid url type", () => {
+		const configPath = join(tempDir, "bad-url.json");
+		writeFileSync(configPath, JSON.stringify({ url: 123 }));
+		expect(() => loadConfigFile(configPath)).toThrow("'url' must be a non-empty string");
+	});
+
+	it("throws on invalid severityThreshold", () => {
+		const configPath = join(tempDir, "bad-severity.json");
+		writeFileSync(configPath, JSON.stringify({ severityThreshold: "extreme" }));
+		expect(() => loadConfigFile(configPath)).toThrow("'severityThreshold' must be one of");
+	});
+
+	it("throws on invalid categories type", () => {
+		const configPath = join(tempDir, "bad-cats.json");
+		writeFileSync(configPath, JSON.stringify({ categories: "not-array" }));
+		expect(() => loadConfigFile(configPath)).toThrow("'categories' must be an array of strings");
+	});
+});
+
+describe("resolveConfig", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "hall-monitor-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true });
+	});
+
+	it("resolves config from CLI flags only", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({ url: "https://forum.example.com" });
+			expect(config.url).toBe("https://forum.example.com");
+			expect(config.severityThreshold).toBe("medium");
+			expect(config.outputFormat).toBe("terminal");
+			expect(config.apiKey).toBeNull();
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("merges config file with CLI flags (CLI wins)", () => {
+		const configPath = join(tempDir, ".hall-monitor.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				url: "https://from-file.com",
+				apiKey: "file-key",
+				severityThreshold: "low",
+			}),
+		);
+
+		const config = resolveConfig({
+			config: configPath,
+			url: "https://from-cli.com",
+			severity: "high",
+		});
+
+		expect(config.url).toBe("https://from-cli.com");
+		expect(config.apiKey).toBe("file-key");
+		expect(config.severityThreshold).toBe("high");
+	});
+
+	it("uses config file url when no CLI url provided", () => {
+		const configPath = join(tempDir, ".hall-monitor.json");
+		writeFileSync(configPath, JSON.stringify({ url: "https://from-file.com" }));
+
+		const config = resolveConfig({ config: configPath });
+		expect(config.url).toBe("https://from-file.com");
+	});
+
+	it("throws when no url is provided anywhere", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			expect(() => resolveConfig({})).toThrow("No Discourse URL provided");
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("sets json output format from flag", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({
+				url: "https://forum.example.com",
+				json: true,
+			});
+			expect(config.outputFormat).toBe("json");
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("throws on invalid severity flag", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			expect(() =>
+				resolveConfig({ url: "https://forum.example.com", severity: "extreme" }),
+			).toThrow("Invalid severity level");
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("applies all defaults correctly", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({ url: "https://forum.example.com" });
+			expect(config).toEqual({
+				url: "https://forum.example.com",
+				apiKey: null,
+				apiUsername: null,
+				categories: [],
+				tags: [],
+				checkIntervalTopics: 100,
+				anthropicApiKey: null,
+				severityThreshold: "medium",
+				outputFormat: "terminal",
+			});
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+});

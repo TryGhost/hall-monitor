@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.hall-monitor.json
+coverage/
+*.tsbuildinfo
