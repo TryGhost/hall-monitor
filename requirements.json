@@ -1,0 +1,226 @@
+{
+  "project": "hall-monitor",
+  "version": "0.1.0",
+  "lastUpdated": "2025-02-01",
+  "requirements": [
+    {
+      "id": "CORE-001",
+      "category": "core",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "CLI entry point with configuration",
+      "description": "The tool runs as a CLI command: `hall-monitor --url <discourse-url>`. It accepts a Discourse root URL as a required argument and optional flags for API key, output format, severity threshold, and category/tag filters. Configuration can also be read from a `.hall-monitor.json` file in the current directory.",
+      "acceptanceCriteria": [
+        "CLI parses --url, --api-key, --api-username, --config, --json, --severity flags",
+        "Falls back to .hall-monitor.json if present and no flags given",
+        "Prints usage help with --help",
+        "Exits with code 1 and a clear message if no URL is provided"
+      ]
+    },
+    {
+      "id": "CORE-002",
+      "category": "core",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "SQLite state database",
+      "description": "A local SQLite database tracks which topics and posts have been seen, when the last check ran, and the results of prior analyses. This enables idempotent runs — each invocation processes only new or updated content since the last run.",
+      "acceptanceCriteria": [
+        "Database is created automatically at ~/.hall-monitor/state.db on first run",
+        "Schema includes tables: seen_topics, seen_posts, analysis_results, run_log",
+        "seen_topics tracks topic_id, last_post_number, last_checked_at",
+        "Migrations run automatically on startup if schema is outdated",
+        "Database path is overridable via --db flag"
+      ]
+    },
+    {
+      "id": "INGEST-001",
+      "category": "ingestion",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "Fetch latest topics from Discourse",
+      "description": "Connect to a Discourse instance via its public JSON API and retrieve the latest topics. Support pagination to collect a configurable number of recent topics (default: 100). Handle HTTP errors, rate limiting (429 + Retry-After), and network failures gracefully.",
+      "acceptanceCriteria": [
+        "Fetches /latest.json with pagination support",
+        "Respects rate limits: backs off on 429 using Retry-After header",
+        "Returns typed Topic[] array with id, title, slug, posts_count, views, like_count, created_at, last_posted_at, category_id, tags, excerpt",
+        "Supports optional API key auth via Api-Key and Api-Username headers",
+        "Logs HTTP errors to stderr without crashing"
+      ]
+    },
+    {
+      "id": "INGEST-002",
+      "category": "ingestion",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "Fetch topic details and posts",
+      "description": "For topics identified as potentially relevant, fetch the full topic with its posts using /t/{id}.json. Retrieve enough context for the LLM to classify — at minimum the original post and latest replies.",
+      "acceptanceCriteria": [
+        "Fetches /t/{topic_id}.json to get full topic data",
+        "Retrieves the first post (OP) and up to 5 most recent replies",
+        "Strips HTML from post bodies to produce clean text for LLM input",
+        "Handles deleted/private topics gracefully (skip with warning)"
+      ]
+    },
+    {
+      "id": "INGEST-003",
+      "category": "ingestion",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Fetch topics by category and tag",
+      "description": "Allow monitoring specific Discourse categories and/or tags instead of (or in addition to) the global latest feed. Users configure this via category slugs/IDs and tag names.",
+      "acceptanceCriteria": [
+        "Fetches /c/{slug}/{id}.json for specified categories",
+        "Fetches /tag/{tag_name}.json for specified tags",
+        "Deduplicates topics that appear in multiple categories/tags",
+        "Falls back to /latest.json if no categories or tags are configured"
+      ]
+    },
+    {
+      "id": "INGEST-004",
+      "category": "ingestion",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Incremental fetch using stored state",
+      "description": "On subsequent runs, only fetch topics that are new or have new posts since the last check. Use the SQLite state database to track the last seen state per topic.",
+      "acceptanceCriteria": [
+        "Compares fetched topic list against seen_topics table",
+        "Identifies new topics (not in seen_topics) and updated topics (last_post_number increased)",
+        "Only fetches full details for new/updated topics",
+        "Updates seen_topics after successful processing",
+        "First run processes all fetched topics (no prior state)"
+      ]
+    },
+    {
+      "id": "FILTER-001",
+      "category": "filtering",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "Pre-filter topics before LLM analysis",
+      "description": "Apply fast, cheap heuristics to filter out obvious noise before sending content to the LLM. This reduces API costs and latency. Heuristics include: skip topics with no replies and low views (likely spam/noise), skip topics older than a configurable window, skip topics in excluded categories.",
+      "acceptanceCriteria": [
+        "Filters out topics with 0 replies and < 5 views (configurable thresholds)",
+        "Filters out topics older than 30 days by default (configurable)",
+        "Allows category exclusion list in config",
+        "Pre-filter is applied before any LLM API calls",
+        "Filtered topics are logged at debug level for transparency"
+      ]
+    },
+    {
+      "id": "ANALYSIS-001",
+      "category": "analysis",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "LLM-powered topic classification",
+      "description": "Send topic content (title, OP body, recent replies) to Claude for classification. The LLM assigns one of the defined alert categories (bug-report, regression, security, feature-request, pain-point, praise, trend, noise) and a severity level (critical, high, medium, low). Responses are structured/parsed into typed results.",
+      "acceptanceCriteria": [
+        "Calls Claude API with a well-crafted system prompt defining the OSS maintainer context",
+        "Sends topic title + OP text + up to 5 reply excerpts as user message",
+        "Parses structured response into { category, severity, summary, reasoning }",
+        "Handles LLM API errors gracefully (retry once on 5xx, skip on persistent failure)",
+        "Uses Haiku model by default for cost efficiency, configurable to Sonnet for higher accuracy"
+      ]
+    },
+    {
+      "id": "ANALYSIS-002",
+      "category": "analysis",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Batch analysis to reduce API calls",
+      "description": "Group multiple short topics into a single LLM request where possible. This reduces round-trips and cost. Each batch should stay within token limits.",
+      "acceptanceCriteria": [
+        "Groups topics into batches of up to 5 (configurable)",
+        "Estimates token count to stay under model context window",
+        "Falls back to single-topic analysis for long topics",
+        "Maintains correct mapping from batch response to individual topics"
+      ]
+    },
+    {
+      "id": "ANALYSIS-003",
+      "category": "analysis",
+      "priority": "P2",
+      "status": "proposed",
+      "title": "Trend detection across topics",
+      "description": "After individual classification, perform a second pass to detect trends — recurring themes, growing frustrations, or emerging feature requests that appear across multiple topics. This is a cross-topic analysis done at the end of a run.",
+      "acceptanceCriteria": [
+        "Groups classified topics by category and extracts common themes",
+        "Sends grouped summaries to LLM for trend analysis",
+        "Outputs detected trends as separate items in the report",
+        "Only runs when >= 10 classified topics are available in a single run"
+      ]
+    },
+    {
+      "id": "OUTPUT-001",
+      "category": "output",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "Terminal report output",
+      "description": "After analysis, print a human-readable report to stdout. Group findings by severity, show category labels, one-line summaries, and links back to the original forum topics. Use color and formatting for readability.",
+      "acceptanceCriteria": [
+        "Groups findings by severity (critical first, then high, medium, low)",
+        "Each finding shows: [CATEGORY] Title — one-line summary (link)",
+        "Critical and high severity items are highlighted",
+        "Shows run summary: N topics checked, M findings, K new since last run",
+        "Respects NO_COLOR env var for CI environments"
+      ]
+    },
+    {
+      "id": "OUTPUT-002",
+      "category": "output",
+      "priority": "P0",
+      "status": "proposed",
+      "title": "JSON output mode",
+      "description": "Support --json flag to output the full analysis results as structured JSON to stdout. This enables integration with CI pipelines, dashboards, and other tooling.",
+      "acceptanceCriteria": [
+        "Outputs valid JSON array of findings to stdout",
+        "Each finding includes: topicId, topicUrl, title, category, severity, summary, reasoning, detectedAt",
+        "JSON output is machine-parseable (no ANSI codes, no mixed stderr/stdout)",
+        "Non-finding output (progress, warnings) goes to stderr"
+      ]
+    },
+    {
+      "id": "OUTPUT-003",
+      "category": "output",
+      "priority": "P2",
+      "status": "proposed",
+      "title": "Exit code reflects findings",
+      "description": "Exit with different codes depending on what was found, enabling CI/automation to take action based on severity.",
+      "acceptanceCriteria": [
+        "Exit 0: no findings above threshold",
+        "Exit 1: findings at or above configured severity threshold",
+        "Exit 2: runtime error (network, API, config)",
+        "Severity threshold is configurable via --severity flag"
+      ]
+    },
+    {
+      "id": "CONFIG-001",
+      "category": "configuration",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Init command to generate config file",
+      "description": "Provide a `hall-monitor init` subcommand that interactively generates a .hall-monitor.json config file. Prompts for the Discourse URL, optional API key, categories to watch, and severity threshold.",
+      "acceptanceCriteria": [
+        "Runs as `hall-monitor init`",
+        "Prompts for Discourse URL and validates it returns a valid /site.json",
+        "Prompts for optional API key",
+        "Fetches and displays available categories for selection",
+        "Writes .hall-monitor.json to current directory",
+        "Warns if file already exists and asks to overwrite"
+      ]
+    },
+    {
+      "id": "CONFIG-002",
+      "category": "configuration",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Anthropic API key configuration",
+      "description": "The Anthropic API key for LLM analysis must be configurable via multiple sources with clear precedence: CLI flag > environment variable (ANTHROPIC_API_KEY) > config file.",
+      "acceptanceCriteria": [
+        "Reads from --anthropic-api-key flag first",
+        "Falls back to ANTHROPIC_API_KEY environment variable",
+        "Falls back to anthropicApiKey in .hall-monitor.json",
+        "Exits with clear error message if no key is found",
+        "Never logs or displays the API key"
+      ]
+    }
+  ]
+}
