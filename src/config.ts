@@ -12,6 +12,10 @@ export interface HallMonitorConfig {
 	severityThreshold: "critical" | "high" | "medium" | "low";
 	outputFormat: "terminal" | "json";
 	dbPath: string | null;
+	filterMinReplies: number;
+	filterMinViews: number;
+	filterMaxAgeDays: number;
+	filterExcludeCategories: number[];
 }
 
 const SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
@@ -27,6 +31,10 @@ const DEFAULT_CONFIG: Omit<HallMonitorConfig, "url"> = {
 	severityThreshold: "medium",
 	outputFormat: "terminal",
 	dbPath: null,
+	filterMinReplies: 1,
+	filterMinViews: 5,
+	filterMaxAgeDays: 30,
+	filterExcludeCategories: [],
 };
 
 const DEFAULT_CONFIG_FILENAME = ".hall-monitor.json";
@@ -133,6 +141,37 @@ function validatePartialConfig(raw: Record<string, unknown>): Partial<HallMonito
 			throw new Error("Config: 'dbPath' must be a string or null");
 		}
 		config.dbPath = raw.dbPath as string | null;
+	}
+
+	if (raw.filterMinReplies !== undefined) {
+		if (typeof raw.filterMinReplies !== "number" || raw.filterMinReplies < 0) {
+			throw new Error("Config: 'filterMinReplies' must be a non-negative number");
+		}
+		config.filterMinReplies = raw.filterMinReplies;
+	}
+
+	if (raw.filterMinViews !== undefined) {
+		if (typeof raw.filterMinViews !== "number" || raw.filterMinViews < 0) {
+			throw new Error("Config: 'filterMinViews' must be a non-negative number");
+		}
+		config.filterMinViews = raw.filterMinViews;
+	}
+
+	if (raw.filterMaxAgeDays !== undefined) {
+		if (typeof raw.filterMaxAgeDays !== "number" || raw.filterMaxAgeDays < 1) {
+			throw new Error("Config: 'filterMaxAgeDays' must be a positive number");
+		}
+		config.filterMaxAgeDays = raw.filterMaxAgeDays;
+	}
+
+	if (raw.filterExcludeCategories !== undefined) {
+		if (
+			!Array.isArray(raw.filterExcludeCategories) ||
+			!raw.filterExcludeCategories.every((c) => typeof c === "number" && Number.isInteger(c))
+		) {
+			throw new Error("Config: 'filterExcludeCategories' must be an array of integers");
+		}
+		config.filterExcludeCategories = raw.filterExcludeCategories;
 	}
 
 	return config;

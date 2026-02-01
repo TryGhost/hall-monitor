@@ -78,6 +78,67 @@ describe("loadConfigFile", () => {
 		writeFileSync(configPath, JSON.stringify({ categories: "not-array" }));
 		expect(() => loadConfigFile(configPath)).toThrow("'categories' must be an array of strings");
 	});
+
+	it("loads filter config fields", () => {
+		const configPath = join(tempDir, "filter.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				filterMinReplies: 2,
+				filterMinViews: 10,
+				filterMaxAgeDays: 14,
+				filterExcludeCategories: [3, 5],
+			}),
+		);
+
+		const config = loadConfigFile(configPath);
+		expect(config).toEqual({
+			filterMinReplies: 2,
+			filterMinViews: 10,
+			filterMaxAgeDays: 14,
+			filterExcludeCategories: [3, 5],
+		});
+	});
+
+	it("throws on negative filterMinReplies", () => {
+		const configPath = join(tempDir, "bad-replies.json");
+		writeFileSync(configPath, JSON.stringify({ filterMinReplies: -1 }));
+		expect(() => loadConfigFile(configPath)).toThrow(
+			"'filterMinReplies' must be a non-negative number",
+		);
+	});
+
+	it("throws on non-number filterMinViews", () => {
+		const configPath = join(tempDir, "bad-views.json");
+		writeFileSync(configPath, JSON.stringify({ filterMinViews: "many" }));
+		expect(() => loadConfigFile(configPath)).toThrow(
+			"'filterMinViews' must be a non-negative number",
+		);
+	});
+
+	it("throws on zero filterMaxAgeDays", () => {
+		const configPath = join(tempDir, "bad-age.json");
+		writeFileSync(configPath, JSON.stringify({ filterMaxAgeDays: 0 }));
+		expect(() => loadConfigFile(configPath)).toThrow(
+			"'filterMaxAgeDays' must be a positive number",
+		);
+	});
+
+	it("throws on non-integer filterExcludeCategories", () => {
+		const configPath = join(tempDir, "bad-exclude.json");
+		writeFileSync(configPath, JSON.stringify({ filterExcludeCategories: [1, 2.5] }));
+		expect(() => loadConfigFile(configPath)).toThrow(
+			"'filterExcludeCategories' must be an array of integers",
+		);
+	});
+
+	it("throws on non-array filterExcludeCategories", () => {
+		const configPath = join(tempDir, "bad-exclude2.json");
+		writeFileSync(configPath, JSON.stringify({ filterExcludeCategories: "not-array" }));
+		expect(() => loadConfigFile(configPath)).toThrow(
+			"'filterExcludeCategories' must be an array of integers",
+		);
+	});
 });
 
 describe("resolveConfig", () => {
@@ -187,6 +248,10 @@ describe("resolveConfig", () => {
 				severityThreshold: "medium",
 				outputFormat: "terminal",
 				dbPath: null,
+				filterMinReplies: 1,
+				filterMinViews: 5,
+				filterMaxAgeDays: 30,
+				filterExcludeCategories: [],
 			});
 		} finally {
 			process.chdir(originalCwd);

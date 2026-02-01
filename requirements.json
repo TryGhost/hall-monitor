@@ -79,7 +79,7 @@
       "id": "INGEST-004",
       "category": "ingestion",
       "priority": "P1",
-      "status": "in-progress",
+      "status": "done",
       "title": "Incremental fetch using stored state",
       "description": "On subsequent runs, only fetch topics that are new or have new posts since the last check. Use the SQLite state database to track the last seen state per topic.",
       "acceptanceCriteria": [
@@ -94,7 +94,7 @@
       "id": "FILTER-001",
       "category": "filtering",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "Pre-filter topics before LLM analysis",
       "description": "Apply fast, cheap heuristics to filter out obvious noise before sending content to the LLM. This reduces API costs and latency. Heuristics include: skip topics with no replies and low views (likely spam/noise), skip topics older than a configurable window, skip topics in excluded categories.",
       "acceptanceCriteria": [

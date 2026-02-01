@@ -53,6 +53,10 @@ function makeConfig(overrides: Partial<HallMonitorConfig> = {}): HallMonitorConf
 		severityThreshold: "medium",
 		outputFormat: "terminal",
 		dbPath: null,
+		filterMinReplies: 1,
+		filterMinViews: 5,
+		filterMaxAgeDays: 30,
+		filterExcludeCategories: [],
 		...overrides,
 	};
 }
@@ -324,5 +328,64 @@ describe("monitor", () => {
 		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
 		expect(logs.some((l) => l.includes("Skipping topic 10"))).toBe(true);
 		expect(logs.some((l) => l.includes("Fetched details for 1/2 topics"))).toBe(true);
+	});
+
+	it("skips detail fetch for topics filtered by excluded category", async () => {
+		const topics = [makeTopic({ id: 10, category_id: 7 }), makeTopic({ id: 20, category_id: 99 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		// Only topic 10 should get a detail fetch
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			filterExcludeCategories: [99],
+		});
+		await runMonitor(config);
+
+		// 1 call for /latest.json + 1 call for topic 10 only
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/10.json");
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Filtered topic 20"))).toBe(true);
+		expect(logs.some((l) => l.includes("1 passed, 1 filtered"))).toBe(true);
+	});
+
+	it("skips detail fetch for low-engagement topics", async () => {
+		const topics = [
+			makeTopic({ id: 10, posts_count: 1, views: 2 }),
+			makeTopic({ id: 20, posts_count: 5, views: 200 }),
+		];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		// Only topic 20 should get a detail fetch
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const config = makeConfig({ dbPath: join(tempDir, "test.db") });
+		await runMonitor(config);
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/20.json");
+	});
+
+	it("still tracks filtered topics in seen_topics", async () => {
+		const dbPath = join(tempDir, "test.db");
+		const topics = [
+			makeTopic({ id: 10, posts_count: 1, views: 1 }),
+			makeTopic({ id: 20, posts_count: 5, views: 200 }),
+		];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const config = makeConfig({ dbPath });
+		await runMonitor(config);
+
+		// Both topics should be in seen_topics, even though topic 10 was filtered
+		const db = openDatabase(dbPath);
+		const seen10 = getSeenTopic(db, 10);
+		const seen20 = getSeenTopic(db, 20);
+		closeDatabase(db);
+
+		expect(seen10).toBeTruthy();
+		expect(seen20).toBeTruthy();
 	});
 });
