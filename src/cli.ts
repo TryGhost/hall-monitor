@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { resolveConfig } from "./config.js";
+import { runMonitor } from "./monitor.js";
 
 const program = new Command();
 
@@ -14,7 +15,7 @@ program
 	.option("--json", "Output as JSON")
 	.option("--severity <level>", "Minimum severity threshold (critical, high, medium, low)")
 	.option("--db <path>", "Path to SQLite state database")
-	.action((opts) => {
+	.action(async (opts) => {
 		try {
 			const config = resolveConfig({
 				url: opts.url,
@@ -26,12 +27,7 @@ program
 				db: opts.db,
 			});
 
-			if (config.outputFormat === "json") {
-				console.log(JSON.stringify({ status: "ok", config: { url: config.url } }));
-			} else {
-				console.log("Hall Monitor v0.1.0");
-				console.log(`Monitoring: ${config.url}`);
-			}
+			await runMonitor(config);
 		} catch (err) {
 			console.error(`Error: ${(err as Error).message}`);
 			process.exit(1);

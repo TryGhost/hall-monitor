@@ -1,7 +1,7 @@
 {
   "project": "hall-monitor",
   "version": "0.1.0",
-  "lastUpdated": "2026-02-01",
+  "lastUpdated": "2026-02-02",
   "requirements": [
     {
       "id": "CORE-001",
@@ -36,7 +36,7 @@
       "id": "INGEST-001",
       "category": "ingestion",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "Fetch latest topics from Discourse",
       "description": "Connect to a Discourse instance via its public JSON API and retrieve the latest topics. Support pagination to collect a configurable number of recent topics (default: 100). Handle HTTP errors, rate limiting (429 + Retry-After), and network failures gracefully.",
       "acceptanceCriteria": [
@@ -79,7 +79,7 @@
       "id": "INGEST-004",
       "category": "ingestion",
       "priority": "P1",
-      "status": "proposed",
+      "status": "in-progress",
       "title": "Incremental fetch using stored state",
       "description": "On subsequent runs, only fetch topics that are new or have new posts since the last check. Use the SQLite state database to track the last seen state per topic.",
       "acceptanceCriteria": [
