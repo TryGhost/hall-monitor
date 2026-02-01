@@ -186,6 +186,7 @@ describe("resolveConfig", () => {
 				anthropicApiKey: null,
 				severityThreshold: "medium",
 				outputFormat: "terminal",
+				dbPath: null,
 			});
 		} finally {
 			process.chdir(originalCwd);

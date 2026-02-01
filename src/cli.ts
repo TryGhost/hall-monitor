@@ -13,6 +13,7 @@ program
 	.option("--config <path>", "Path to config file")
 	.option("--json", "Output as JSON")
 	.option("--severity <level>", "Minimum severity threshold (critical, high, medium, low)")
+	.option("--db <path>", "Path to SQLite state database")
 	.action((opts) => {
 		try {
 			const config = resolveConfig({
@@ -22,6 +23,7 @@ program
 				config: opts.config,
 				json: opts.json,
 				severity: opts.severity,
+				db: opts.db,
 			});
 
 			if (config.outputFormat === "json") {

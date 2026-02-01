@@ -70,6 +70,7 @@ hall-monitor [options]
 | `--config <path>` | Path to a config file (defaults to `.hall-monitor.json` in the current directory) |
 | `--json` | Output results as JSON instead of human-readable text |
 | `--severity <level>` | Minimum severity threshold: `critical`, `high`, `medium`, or `low` |
+| `--db <path>` | Path to SQLite state database (defaults to `~/.hall-monitor/state.db`) |
 | `-V, --version` | Print version number |
 | `-h, --help` | Show help |
 
@@ -111,7 +112,8 @@ By default, the tool looks for `.hall-monitor.json` in the current directory. Yo
   "checkIntervalTopics": 100,
   "anthropicApiKey": "sk-ant-...",
   "severityThreshold": "medium",
-  "outputFormat": "terminal"
+  "outputFormat": "terminal",
+  "dbPath": null
 }
 ```
 
@@ -126,6 +128,7 @@ By default, the tool looks for `.hall-monitor.json` in the current directory. Yo
 | `anthropicApiKey` | `string \| null` | `null` | Anthropic API key for Claude-powered analysis |
 | `severityThreshold` | `string` | `"medium"` | Minimum severity to report (`critical`, `high`, `medium`, `low`) |
 | `outputFormat` | `string` | `"terminal"` | Output format: `terminal` for human-readable, `json` for structured |
+| `dbPath` | `string \| null` | `null` | Path to SQLite state database (defaults to `~/.hall-monitor/state.db`) |
 
 ### Configuration Precedence
 

@@ -21,7 +21,7 @@
       "id": "CORE-002",
       "category": "core",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "SQLite state database",
       "description": "A local SQLite database tracks which topics and posts have been seen, when the last check ran, and the results of prior analyses. This enables idempotent runs — each invocation processes only new or updated content since the last run.",
       "acceptanceCriteria": [

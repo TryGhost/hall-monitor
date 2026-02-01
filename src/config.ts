@@ -11,6 +11,7 @@ export interface HallMonitorConfig {
 	anthropicApiKey: string | null;
 	severityThreshold: "critical" | "high" | "medium" | "low";
 	outputFormat: "terminal" | "json";
+	dbPath: string | null;
 }
 
 const SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
@@ -25,6 +26,7 @@ const DEFAULT_CONFIG: Omit<HallMonitorConfig, "url"> = {
 	anthropicApiKey: null,
 	severityThreshold: "medium",
 	outputFormat: "terminal",
+	dbPath: null,
 };
 
 const DEFAULT_CONFIG_FILENAME = ".hall-monitor.json";
@@ -126,6 +128,13 @@ function validatePartialConfig(raw: Record<string, unknown>): Partial<HallMonito
 		config.outputFormat = raw.outputFormat as HallMonitorConfig["outputFormat"];
 	}
 
+	if (raw.dbPath !== undefined) {
+		if (raw.dbPath !== null && typeof raw.dbPath !== "string") {
+			throw new Error("Config: 'dbPath' must be a string or null");
+		}
+		config.dbPath = raw.dbPath as string | null;
+	}
+
 	return config;
 }
 
@@ -136,6 +145,7 @@ export interface CliFlags {
 	config?: string;
 	json?: boolean;
 	severity?: string;
+	db?: string;
 }
 
 export function resolveConfig(flags: CliFlags): HallMonitorConfig {
@@ -165,6 +175,9 @@ export function resolveConfig(flags: CliFlags): HallMonitorConfig {
 			);
 		}
 		merged.severityThreshold = flags.severity as HallMonitorConfig["severityThreshold"];
+	}
+	if (flags.db) {
+		merged.dbPath = flags.db;
 	}
 
 	if (!merged.url) {
