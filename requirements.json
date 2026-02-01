@@ -221,6 +221,24 @@
         "Exits with clear error message if no key is found",
         "Never logs or displays the API key"
       ]
+    },
+    {
+      "id": "CORE-003",
+      "category": "core",
+      "priority": "P1",
+      "status": "proposed",
+      "title": "Database status overview command",
+      "description": "Provide a `hall-monitor status` subcommand that prints a summary of what's stored in the local SQLite database. Gives maintainers a quick picture of monitoring state: how many topics have been tracked, when the last run happened, and what findings exist — without performing a new fetch or analysis.",
+      "acceptanceCriteria": [
+        "Runs as `hall-monitor status`",
+        "Shows total number of seen topics and posts in the database",
+        "Shows last run timestamp and result summary from run_log",
+        "Shows count of analysis results grouped by category and severity",
+        "Shows the configured Discourse URL from the database or config",
+        "Prints a helpful message if the database is empty (no runs yet)",
+        "Supports --json flag for machine-readable output",
+        "Respects --db flag to point at a non-default database path"
+      ]
     }
   ]
 }
