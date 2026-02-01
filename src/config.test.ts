@@ -245,6 +245,7 @@ describe("resolveConfig", () => {
 				tags: [],
 				checkIntervalTopics: 100,
 				anthropicApiKey: null,
+				model: "haiku",
 				severityThreshold: "medium",
 				outputFormat: "terminal",
 				dbPath: null,

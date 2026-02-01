@@ -9,6 +9,7 @@ export interface HallMonitorConfig {
 	tags: string[];
 	checkIntervalTopics: number;
 	anthropicApiKey: string | null;
+	model: "haiku" | "sonnet";
 	severityThreshold: "critical" | "high" | "medium" | "low";
 	outputFormat: "terminal" | "json";
 	dbPath: string | null;
@@ -20,6 +21,7 @@ export interface HallMonitorConfig {
 
 const SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
 const OUTPUT_FORMATS = ["terminal", "json"] as const;
+const MODELS = ["haiku", "sonnet"] as const;
 
 const DEFAULT_CONFIG: Omit<HallMonitorConfig, "url"> = {
 	apiKey: null,
@@ -28,6 +30,7 @@ const DEFAULT_CONFIG: Omit<HallMonitorConfig, "url"> = {
 	tags: [],
 	checkIntervalTopics: 100,
 	anthropicApiKey: null,
+	model: "haiku",
 	severityThreshold: "medium",
 	outputFormat: "terminal",
 	dbPath: null,
@@ -120,6 +123,13 @@ function validatePartialConfig(raw: Record<string, unknown>): Partial<HallMonito
 			throw new Error("Config: 'anthropicApiKey' must be a string or null");
 		}
 		config.anthropicApiKey = raw.anthropicApiKey as string | null;
+	}
+
+	if (raw.model !== undefined) {
+		if (!MODELS.includes(raw.model as (typeof MODELS)[number])) {
+			throw new Error(`Config: 'model' must be one of: ${MODELS.join(", ")}`);
+		}
+		config.model = raw.model as HallMonitorConfig["model"];
 	}
 
 	if (raw.severityThreshold !== undefined) {

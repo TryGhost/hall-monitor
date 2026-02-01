@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ClassificationResult } from "./analysis/types.js";
 import type { HallMonitorConfig } from "./config.js";
 import type {
 	DiscourseRawPost,
@@ -12,6 +13,10 @@ import type {
 } from "./discourse/types.js";
 import { runMonitor } from "./monitor.js";
 import { closeDatabase, getSeenTopic, openDatabase, upsertSeenTopic } from "./storage/db.js";
+
+vi.mock("./analysis/classifier.js", () => ({
+	classifyTopic: vi.fn(),
+}));
 
 function makeTopic(overrides: Partial<DiscourseRawTopic> = {}): DiscourseRawTopic {
 	return {
@@ -50,6 +55,7 @@ function makeConfig(overrides: Partial<HallMonitorConfig> = {}): HallMonitorConf
 		tags: [],
 		checkIntervalTopics: 100,
 		anthropicApiKey: null,
+		model: "haiku",
 		severityThreshold: "medium",
 		outputFormat: "terminal",
 		dbPath: null,
@@ -387,5 +393,140 @@ describe("monitor", () => {
 
 		expect(seen10).toBeTruthy();
 		expect(seen20).toBeTruthy();
+	});
+
+	it("runs LLM analysis when anthropicApiKey is configured", async () => {
+		const { classifyTopic } = await import("./analysis/classifier.js");
+		const classifyMock = vi.mocked(classifyTopic);
+
+		const mockResult: ClassificationResult = {
+			topicId: 10,
+			topicUrl: "https://forum.example.com/t/topic-10/10",
+			title: "Topic 10",
+			category: "bug-report",
+			severity: "high",
+			summary: "A bug was found",
+			reasoning: "User reports broken behavior",
+		};
+		classifyMock.mockResolvedValue(mockResult);
+
+		const topics = [makeTopic({ id: 10 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const dbPath = join(tempDir, "test.db");
+		const config = makeConfig({ dbPath, anthropicApiKey: "sk-test" });
+		await runMonitor(config);
+
+		expect(classifyMock).toHaveBeenCalledTimes(1);
+		expect(classifyMock).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 10 }),
+			"sk-test",
+			"haiku",
+		);
+
+		// Verify findings count in run_log
+		const db = openDatabase(dbPath);
+		const row = db.prepare("SELECT findings_count FROM run_log ORDER BY id DESC LIMIT 1").get() as {
+			findings_count: number;
+		};
+		closeDatabase(db);
+		expect(row.findings_count).toBe(1);
+	});
+
+	it("records findings_count excluding noise", async () => {
+		const { classifyTopic } = await import("./analysis/classifier.js");
+		const classifyMock = vi.mocked(classifyTopic);
+
+		classifyMock.mockResolvedValueOnce({
+			topicId: 10,
+			topicUrl: "https://forum.example.com/t/topic-10/10",
+			title: "Topic 10",
+			category: "bug-report",
+			severity: "high",
+			summary: "Bug",
+			reasoning: "Reason",
+		});
+		classifyMock.mockResolvedValueOnce({
+			topicId: 20,
+			topicUrl: "https://forum.example.com/t/topic-20/20",
+			title: "Topic 20",
+			category: "noise",
+			severity: "low",
+			summary: "Noise",
+			reasoning: "Not actionable",
+		});
+
+		const topics = [makeTopic({ id: 10 }), makeTopic({ id: 20 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const dbPath = join(tempDir, "test.db");
+		const config = makeConfig({ dbPath, anthropicApiKey: "sk-test" });
+		await runMonitor(config);
+
+		const db = openDatabase(dbPath);
+		const row = db.prepare("SELECT findings_count FROM run_log ORDER BY id DESC LIMIT 1").get() as {
+			findings_count: number;
+		};
+		closeDatabase(db);
+		// Only the bug-report counts, noise is excluded
+		expect(row.findings_count).toBe(1);
+	});
+
+	it("skips analysis when no API key is configured", async () => {
+		const { classifyTopic } = await import("./analysis/classifier.js");
+		const classifyMock = vi.mocked(classifyTopic);
+		classifyMock.mockClear();
+
+		const topics = [makeTopic({ id: 10 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const config = makeConfig({ dbPath: join(tempDir, "test.db"), anthropicApiKey: null });
+		await runMonitor(config);
+
+		expect(classifyMock).not.toHaveBeenCalled();
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Skipping LLM analysis"))).toBe(true);
+	});
+
+	it("saves analysis results to the database", async () => {
+		const { classifyTopic } = await import("./analysis/classifier.js");
+		const classifyMock = vi.mocked(classifyTopic);
+
+		classifyMock.mockResolvedValueOnce({
+			topicId: 10,
+			topicUrl: "https://forum.example.com/t/topic-10/10",
+			title: "Topic 10",
+			category: "security",
+			severity: "critical",
+			summary: "Security issue found",
+			reasoning: "Potential vulnerability",
+		});
+
+		const topics = [makeTopic({ id: 10 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const dbPath = join(tempDir, "test.db");
+		const config = makeConfig({ dbPath, anthropicApiKey: "sk-test" });
+		await runMonitor(config);
+
+		const db = openDatabase(dbPath);
+		const row = db.prepare("SELECT * FROM analysis_results WHERE topic_id = 10").get() as {
+			topic_id: number;
+			category: string;
+			severity: string;
+			summary: string;
+		};
+		closeDatabase(db);
+
+		expect(row.topic_id).toBe(10);
+		expect(row.category).toBe("security");
+		expect(row.severity).toBe("critical");
+		expect(row.summary).toBe("Security issue found");
 	});
 });

@@ -1,3 +1,5 @@
+import { classifyTopic } from "./analysis/classifier.js";
+import type { ClassificationResult } from "./analysis/types.js";
 import type { HallMonitorConfig } from "./config.js";
 import { DiscourseClient } from "./discourse/client.js";
 import type { Topic, TopicDetails } from "./discourse/types.js";
@@ -8,6 +10,7 @@ import {
 	logRunEnd,
 	logRunStart,
 	openDatabase,
+	saveAnalysisResult,
 	upsertSeenTopic,
 } from "./storage/db.js";
 
@@ -99,15 +102,35 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 		}
 		log("Seen topics updated");
 
-		// 9. Placeholder: analysis
-		log("Skipping LLM analysis (not yet implemented)");
+		// 9. LLM analysis
+		const results: ClassificationResult[] = [];
+
+		if (!config.anthropicApiKey) {
+			log("Skipping LLM analysis (no Anthropic API key configured)");
+		} else if (topicDetails.length === 0) {
+			log("No topics to analyze");
+		} else {
+			log(`Analyzing ${topicDetails.length} topics...`);
+			for (const details of topicDetails) {
+				const result = await classifyTopic(details, config.anthropicApiKey, config.model);
+				if (result) {
+					results.push(result);
+					saveAnalysisResult(db, result);
+					log(`Topic ${details.id}: [${result.category}] ${result.severity} — ${result.summary}`);
+				} else {
+					log(`Topic ${details.id}: classification failed`);
+				}
+			}
+		}
+
+		const findingsCount = results.filter((r) => r.category !== "noise").length;
 
 		// 10. Placeholder: report
 		log("Skipping report (not yet implemented)");
 
 		// 11. Log run end
-		logRunEnd(db, runId, topics.length, 0);
-		log(`Run #${runId} complete: ${topics.length} topics checked, 0 findings`);
+		logRunEnd(db, runId, topics.length, findingsCount);
+		log(`Run #${runId} complete: ${topics.length} topics checked, ${findingsCount} findings`);
 	} finally {
 		// 12. Close database
 		closeDatabase(db);

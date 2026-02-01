@@ -109,7 +109,7 @@
       "id": "ANALYSIS-001",
       "category": "analysis",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "LLM-powered topic classification",
       "description": "Send topic content (title, OP body, recent replies) to Claude for classification. The LLM assigns one of the defined alert categories (bug-report, regression, security, feature-request, pain-point, praise, trend, noise) and a severity level (critical, high, medium, low). Responses are structured/parsed into typed results.",
       "acceptanceCriteria": [

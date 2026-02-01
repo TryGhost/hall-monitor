@@ -10,6 +10,16 @@ export interface SeenTopic {
 	last_checked_at: string;
 }
 
+export interface AnalysisResult {
+	id: number;
+	topic_id: number;
+	category: string;
+	severity: string;
+	summary: string;
+	reasoning: string;
+	analyzed_at: string;
+}
+
 const DEFAULT_DB_DIR = join(homedir(), ".hall-monitor");
 const DEFAULT_DB_PATH = join(DEFAULT_DB_DIR, "state.db");
 
@@ -47,6 +57,23 @@ export function upsertSeenTopic(
 		   last_post_number = excluded.last_post_number,
 		   last_checked_at = excluded.last_checked_at`,
 	).run(topicId, lastPostNumber, now);
+}
+
+export function saveAnalysisResult(
+	db: Database.Database,
+	result: {
+		topicId: number;
+		category: string;
+		severity: string;
+		summary: string;
+		reasoning: string;
+	},
+): void {
+	const now = new Date().toISOString();
+	db.prepare(
+		`INSERT INTO analysis_results (topic_id, category, severity, summary, reasoning, analyzed_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	).run(result.topicId, result.category, result.severity, result.summary, result.reasoning, now);
 }
 
 export function logRunStart(db: Database.Database): number {
