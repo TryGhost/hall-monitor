@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HallMonitorConfig } from "./config.js";
-import type { DiscourseRawTopic, DiscourseTopicListResponse } from "./discourse/types.js";
+import type {
+	DiscourseRawPost,
+	DiscourseRawTopic,
+	DiscourseTopicDetailResponse,
+	DiscourseTopicListResponse,
+} from "./discourse/types.js";
 import { runMonitor } from "./monitor.js";
 import { closeDatabase, getSeenTopic, openDatabase, upsertSeenTopic } from "./storage/db.js";
 
@@ -52,6 +57,44 @@ function makeConfig(overrides: Partial<HallMonitorConfig> = {}): HallMonitorConf
 	};
 }
 
+function makeRawPost(overrides: Partial<DiscourseRawPost> = {}): DiscourseRawPost {
+	return {
+		id: 100,
+		post_number: 1,
+		cooked: "<p>Post body</p>",
+		username: "alice",
+		created_at: "2026-01-15T10:00:00.000Z",
+		updated_at: "2026-01-15T10:00:00.000Z",
+		like_count: 2,
+		reply_count: 0,
+		...overrides,
+	};
+}
+
+function makeTopicDetailResponse(
+	topicId: number,
+	overrides: Partial<DiscourseTopicDetailResponse> = {},
+): DiscourseTopicDetailResponse {
+	const opId = topicId * 100;
+	return {
+		id: topicId,
+		title: `Topic ${topicId}`,
+		slug: `topic-${topicId}`,
+		posts_count: 1,
+		views: 100,
+		like_count: 5,
+		created_at: "2026-01-15T10:00:00.000Z",
+		last_posted_at: "2026-01-16T12:00:00.000Z",
+		category_id: 7,
+		tags: [],
+		post_stream: {
+			posts: [makeRawPost({ id: opId, post_number: 1 })],
+			stream: [opId],
+		},
+		...overrides,
+	};
+}
+
 describe("monitor", () => {
 	let tempDir: string;
 	let fetchMock: ReturnType<typeof vi.fn>;
@@ -73,6 +116,8 @@ describe("monitor", () => {
 	it("fetches topics and logs progress to stderr", async () => {
 		const topics = [makeTopic({ id: 1 }), makeTopic({ id: 2 })];
 		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(1)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(2)));
 
 		const config = makeConfig({ dbPath: join(tempDir, "test.db") });
 		await runMonitor(config);
@@ -88,6 +133,8 @@ describe("monitor", () => {
 	it("identifies new topics (not in seen_topics)", async () => {
 		const topics = [makeTopic({ id: 10 }), makeTopic({ id: 20 })];
 		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
 
 		const config = makeConfig({ dbPath: join(tempDir, "test.db") });
 		await runMonitor(config);
@@ -106,6 +153,8 @@ describe("monitor", () => {
 		// Return topic 10 with 5 posts (updated) and topic 20 (new)
 		const topics = [makeTopic({ id: 10, posts_count: 5 }), makeTopic({ id: 20, posts_count: 2 })];
 		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
 
 		const config = makeConfig({ dbPath });
 		await runMonitor(config);
@@ -142,6 +191,8 @@ describe("monitor", () => {
 		const dbPath = join(tempDir, "test.db");
 		const topics = [makeTopic({ id: 10, posts_count: 5 }), makeTopic({ id: 20, posts_count: 8 })];
 		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
 
 		const config = makeConfig({ dbPath });
 		await runMonitor(config);
@@ -160,6 +211,9 @@ describe("monitor", () => {
 		const dbPath = join(tempDir, "test.db");
 		const topics = [makeTopic({ id: 1 }), makeTopic({ id: 2 }), makeTopic({ id: 3 })];
 		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(1)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(2)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(3)));
 
 		const config = makeConfig({ dbPath });
 		await runMonitor(config);
@@ -204,5 +258,71 @@ describe("monitor", () => {
 		expect(logs.some((l) => l.includes("Fetched 0 topics"))).toBe(true);
 		expect(logs.some((l) => l.includes("0 new, 0 updated, 0 unchanged"))).toBe(true);
 		expect(logs.some((l) => l.includes("0 topics checked"))).toBe(true);
+	});
+
+	it("fetches details for new topics", async () => {
+		const topics = [makeTopic({ id: 10 }), makeTopic({ id: 20 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const config = makeConfig({ dbPath: join(tempDir, "test.db") });
+		await runMonitor(config);
+
+		// 1 call for /latest.json + 2 calls for /t/{id}.json
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/10.json");
+		expect(fetchMock.mock.calls[2][0]).toContain("/t/20.json");
+	});
+
+	it("fetches details for updated topics", async () => {
+		const dbPath = join(tempDir, "test.db");
+		const db = openDatabase(dbPath);
+		upsertSeenTopic(db, 10, 3);
+		closeDatabase(db);
+
+		// Topic 10 now has 5 posts (updated)
+		const topics = [makeTopic({ id: 10, posts_count: 5 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const config = makeConfig({ dbPath });
+		await runMonitor(config);
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/10.json");
+	});
+
+	it("skips detail fetch for unchanged topics", async () => {
+		const dbPath = join(tempDir, "test.db");
+		const db = openDatabase(dbPath);
+		upsertSeenTopic(db, 10, 3);
+		closeDatabase(db);
+
+		// Topic 10 still has 3 posts (unchanged)
+		const topics = [makeTopic({ id: 10, posts_count: 3 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+
+		const config = makeConfig({ dbPath });
+		await runMonitor(config);
+
+		// Only 1 call for /latest.json, no detail fetches
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("handles null (deleted/private) topics gracefully during detail fetch", async () => {
+		const topics = [makeTopic({ id: 10 }), makeTopic({ id: 20 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		// Topic 10 returns 404
+		fetchMock.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
+		// Topic 20 succeeds
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const config = makeConfig({ dbPath: join(tempDir, "test.db") });
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Skipping topic 10"))).toBe(true);
+		expect(logs.some((l) => l.includes("Fetched details for 1/2 topics"))).toBe(true);
 	});
 });

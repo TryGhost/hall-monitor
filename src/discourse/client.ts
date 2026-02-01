@@ -1,4 +1,13 @@
-import type { DiscourseRawTopic, DiscourseTopicListResponse, Topic } from "./types.js";
+import type {
+	DiscoursePostsResponse,
+	DiscourseRawPost,
+	DiscourseRawTopic,
+	DiscourseTopicDetailResponse,
+	DiscourseTopicListResponse,
+	Post,
+	Topic,
+	TopicDetails,
+} from "./types.js";
 
 const MAX_RETRY_WAIT_MS = 60_000;
 const DEFAULT_LIMIT = 100;
@@ -13,6 +22,83 @@ export class DiscourseClient {
 		this.baseUrl = baseUrl.replace(/\/+$/, "");
 		this.apiKey = options?.apiKey;
 		this.apiUsername = options?.apiUsername;
+	}
+
+	/**
+	 * Fetch full topic details including the OP and up to 5 most recent replies.
+	 * Returns null for deleted, private, or inaccessible topics.
+	 */
+	async fetchTopicDetails(topicId: number): Promise<TopicDetails | null> {
+		const response = await this.request(`/t/${topicId}.json`);
+		if (!response) return null;
+
+		let body: DiscourseTopicDetailResponse;
+		try {
+			body = (await response.json()) as DiscourseTopicDetailResponse;
+		} catch {
+			console.error(`Failed to parse topic detail response for topic ${topicId}`);
+			return null;
+		}
+
+		const initialPosts = body.post_stream?.posts ?? [];
+		const stream = body.post_stream?.stream ?? [];
+
+		// Find OP from the initial posts
+		const rawOp = initialPosts.find((p) => p.post_number === 1);
+		if (!rawOp) {
+			console.error(`No OP found for topic ${topicId}`);
+			return null;
+		}
+
+		// Determine the 5 most recent reply IDs (exclude the OP's post ID)
+		const replyIds = stream.filter((id) => id !== rawOp.id);
+		const recentReplyIds = replyIds.slice(-5);
+
+		// Check which are already in the initial response
+		const loadedIds = new Set(initialPosts.map((p) => p.id));
+		const missingIds = recentReplyIds.filter((id) => !loadedIds.has(id));
+
+		let allPosts = initialPosts;
+
+		// Fetch missing posts if needed
+		if (missingIds.length > 0) {
+			const params = missingIds.map((id) => `post_ids[]=${id}`).join("&");
+			const postsResponse = await this.request(`/t/${topicId}/posts.json?${params}`);
+			if (postsResponse) {
+				try {
+					const postsBody = (await postsResponse.json()) as DiscoursePostsResponse;
+					const fetchedPosts = postsBody.post_stream?.posts ?? [];
+					allPosts = [...initialPosts, ...fetchedPosts];
+				} catch {
+					// Fall through with initial posts only
+				}
+			}
+		}
+
+		// Build a lookup of all available posts by ID
+		const postsById = new Map<number, DiscourseRawPost>();
+		for (const p of allPosts) {
+			postsById.set(p.id, p);
+		}
+
+		// Collect replies in post_number order
+		const replies: Post[] = [];
+		for (const id of recentReplyIds) {
+			const raw = postsById.get(id);
+			if (raw) {
+				replies.push(mapPost(raw));
+			}
+		}
+		replies.sort((a, b) => a.postNumber - b.postNumber);
+
+		return {
+			id: body.id,
+			title: body.title,
+			slug: body.slug,
+			url: `${this.baseUrl}/t/${body.slug}/${body.id}`,
+			op: mapPost(rawOp),
+			replies,
+		};
 	}
 
 	/**
@@ -95,6 +181,31 @@ export class DiscourseClient {
 
 		return response;
 	}
+}
+
+export function stripHtml(html: string): string {
+	return html
+		.replace(/<[^>]*>/g, "")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function mapPost(raw: DiscourseRawPost): Post {
+	return {
+		id: raw.id,
+		postNumber: raw.post_number,
+		body: stripHtml(raw.cooked),
+		username: raw.username,
+		createdAt: raw.created_at,
+		likeCount: raw.like_count,
+		replyCount: raw.reply_count,
+	};
 }
 
 function mapTopic(raw: DiscourseRawTopic): Topic {

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DiscourseClient } from "./client.js";
-import type { DiscourseRawTopic, DiscourseTopicListResponse } from "./types.js";
+import { DiscourseClient, stripHtml } from "./client.js";
+import type {
+	DiscourseRawPost,
+	DiscourseRawTopic,
+	DiscourseTopicDetailResponse,
+	DiscourseTopicListResponse,
+} from "./types.js";
 
 function makeTopic(overrides: Partial<DiscourseRawTopic> = {}): DiscourseRawTopic {
 	return {
@@ -29,13 +34,6 @@ function makeResponse(
 			...(moreTopicsUrl ? { more_topics_url: moreTopicsUrl } : {}),
 		},
 	};
-}
-
-function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json", ...headers },
-	});
 }
 
 describe("discourse/client", () => {
@@ -238,5 +236,210 @@ describe("discourse/client", () => {
 		const topics = await client.fetchLatestTopics();
 
 		expect(topics[0].tags).toEqual([]);
+	});
+});
+
+function makeRawPost(overrides: Partial<DiscourseRawPost> = {}): DiscourseRawPost {
+	return {
+		id: 100,
+		post_number: 1,
+		cooked: "<p>Hello world</p>",
+		username: "alice",
+		created_at: "2026-01-15T10:00:00.000Z",
+		updated_at: "2026-01-15T10:00:00.000Z",
+		like_count: 2,
+		reply_count: 0,
+		...overrides,
+	};
+}
+
+function makeTopicDetailResponse(
+	overrides: Partial<DiscourseTopicDetailResponse> = {},
+): DiscourseTopicDetailResponse {
+	return {
+		id: 42,
+		title: "Test Topic",
+		slug: "test-topic",
+		posts_count: 1,
+		views: 100,
+		like_count: 5,
+		created_at: "2026-01-15T10:00:00.000Z",
+		last_posted_at: "2026-01-16T12:00:00.000Z",
+		category_id: 7,
+		tags: ["bug"],
+		post_stream: {
+			posts: [makeRawPost()],
+			stream: [100],
+		},
+		...overrides,
+	};
+}
+
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "Content-Type": "application/json", ...headers },
+	});
+}
+
+describe("stripHtml", () => {
+	it("removes HTML tags", () => {
+		expect(stripHtml("<p>Hello <strong>world</strong></p>")).toBe("Hello world");
+	});
+
+	it("decodes common HTML entities", () => {
+		expect(stripHtml("&amp; &lt; &gt; &quot; &#39; &nbsp;")).toBe("& < > \" '");
+	});
+
+	it("collapses whitespace", () => {
+		expect(stripHtml("<p>line one</p>\n\n<p>line two</p>")).toBe("line one line two");
+	});
+
+	it("handles nested tags", () => {
+		expect(stripHtml("<div><p><em><strong>deep</strong></em></p></div>")).toBe("deep");
+	});
+
+	it("returns empty string for empty input", () => {
+		expect(stripHtml("")).toBe("");
+	});
+});
+
+describe("fetchTopicDetails", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("fetches topic details and returns TopicDetails with OP and replies", async () => {
+		const op = makeRawPost({ id: 100, post_number: 1, cooked: "<p>OP body</p>" });
+		const reply = makeRawPost({
+			id: 101,
+			post_number: 2,
+			cooked: "<p>A reply</p>",
+			username: "bob",
+		});
+		const detail = makeTopicDetailResponse({
+			post_stream: { posts: [op, reply], stream: [100, 101] },
+		});
+		fetchMock.mockResolvedValueOnce(jsonResponse(detail));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(42);
+
+		expect(result).not.toBeNull();
+		expect(result?.id).toBe(42);
+		expect(result?.title).toBe("Test Topic");
+		expect(result?.url).toBe("https://forum.example.com/t/test-topic/42");
+		expect(result?.op.body).toBe("OP body");
+		expect(result?.op.postNumber).toBe(1);
+		expect(result?.replies).toHaveLength(1);
+		expect(result?.replies[0].body).toBe("A reply");
+		expect(result?.replies[0].username).toBe("bob");
+	});
+
+	it("extracts up to 5 most recent replies when topic has many posts", async () => {
+		const op = makeRawPost({ id: 100, post_number: 1 });
+		const posts = [op];
+		const stream = [100];
+		for (let i = 1; i <= 8; i++) {
+			const post = makeRawPost({ id: 100 + i, post_number: 1 + i, cooked: `<p>Reply ${i}</p>` });
+			posts.push(post);
+			stream.push(100 + i);
+		}
+
+		const detail = makeTopicDetailResponse({
+			post_stream: { posts, stream },
+		});
+		fetchMock.mockResolvedValueOnce(jsonResponse(detail));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(42);
+
+		expect(result?.replies).toHaveLength(5);
+		// Should be the last 5 replies (posts 5-9, IDs 104-108)
+		expect(result?.replies.map((r) => r.id)).toEqual([104, 105, 106, 107, 108]);
+	});
+
+	it("fetches missing recent posts via posts.json when not in initial response", async () => {
+		const op = makeRawPost({ id: 100, post_number: 1 });
+		// Initial response only has the OP, but stream references more posts
+		const detail = makeTopicDetailResponse({
+			post_stream: { posts: [op], stream: [100, 101, 102] },
+		});
+		fetchMock.mockResolvedValueOnce(jsonResponse(detail));
+
+		// Second request fetches the missing posts
+		const missingPosts = {
+			post_stream: {
+				posts: [
+					makeRawPost({ id: 101, post_number: 2, cooked: "<p>Reply 1</p>" }),
+					makeRawPost({ id: 102, post_number: 3, cooked: "<p>Reply 2</p>" }),
+				],
+			},
+		};
+		fetchMock.mockResolvedValueOnce(jsonResponse(missingPosts));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(42);
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/42/posts.json?");
+		expect(fetchMock.mock.calls[1][0]).toContain("post_ids[]=101");
+		expect(fetchMock.mock.calls[1][0]).toContain("post_ids[]=102");
+		expect(result?.replies).toHaveLength(2);
+		expect(result?.replies[0].body).toBe("Reply 1");
+		expect(result?.replies[1].body).toBe("Reply 2");
+	});
+
+	it("strips HTML tags from post bodies", async () => {
+		const op = makeRawPost({
+			id: 100,
+			post_number: 1,
+			cooked: '<p>This is <strong>bold</strong> and <a href="http://example.com">a link</a></p>',
+		});
+		const detail = makeTopicDetailResponse({
+			post_stream: { posts: [op], stream: [100] },
+		});
+		fetchMock.mockResolvedValueOnce(jsonResponse(detail));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(42);
+
+		expect(result?.op.body).toBe("This is bold and a link");
+	});
+
+	it("returns null for 404 (deleted topic)", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(999);
+
+		expect(result).toBeNull();
+	});
+
+	it("returns null for 403 (private topic)", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(999);
+
+		expect(result).toBeNull();
+	});
+
+	it("handles network errors gracefully (returns null)", async () => {
+		fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const result = await client.fetchTopicDetails(42);
+
+		expect(result).toBeNull();
 	});
 });

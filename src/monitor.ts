@@ -1,5 +1,6 @@
 import type { HallMonitorConfig } from "./config.js";
 import { DiscourseClient } from "./discourse/client.js";
+import type { TopicDetails } from "./discourse/types.js";
 import {
 	closeDatabase,
 	getSeenTopic,
@@ -46,13 +47,16 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 		let newCount = 0;
 		let updatedCount = 0;
 		let unchangedCount = 0;
+		const relevantTopicIds: number[] = [];
 
 		for (const topic of topics) {
 			const seen = getSeenTopic(db, topic.id);
 			if (!seen) {
 				newCount++;
+				relevantTopicIds.push(topic.id);
 			} else if (topic.postsCount > seen.last_post_number) {
 				updatedCount++;
+				relevantTopicIds.push(topic.id);
 			} else {
 				unchangedCount++;
 			}
@@ -60,26 +64,40 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 
 		log(`Topics: ${newCount} new, ${updatedCount} updated, ${unchangedCount} unchanged`);
 
-		// 6. Update seen topics
+		// 6. Fetch details for new/updated topics
+		const topicDetails: TopicDetails[] = [];
+		for (const topicId of relevantTopicIds) {
+			const details = await client.fetchTopicDetails(topicId);
+			if (details) {
+				topicDetails.push(details);
+			} else {
+				log(`Skipping topic ${topicId} (deleted or inaccessible)`);
+			}
+		}
+		if (relevantTopicIds.length > 0) {
+			log(`Fetched details for ${topicDetails.length}/${relevantTopicIds.length} topics`);
+		}
+
+		// 7. Update seen topics
 		for (const topic of topics) {
 			upsertSeenTopic(db, topic.id, topic.postsCount);
 		}
 		log("Seen topics updated");
 
-		// 7. Placeholder: filter
+		// 8. Placeholder: filter
 		log("Skipping pre-filter (not yet implemented)");
 
-		// 8. Placeholder: analysis
+		// 9. Placeholder: analysis
 		log("Skipping LLM analysis (not yet implemented)");
 
-		// 9. Placeholder: report
+		// 10. Placeholder: report
 		log("Skipping report (not yet implemented)");
 
-		// 10. Log run end
+		// 11. Log run end
 		logRunEnd(db, runId, topics.length, 0);
 		log(`Run #${runId} complete: ${topics.length} topics checked, 0 findings`);
 	} finally {
-		// 11. Close database
+		// 12. Close database
 		closeDatabase(db);
 	}
 }

@@ -51,7 +51,7 @@
       "id": "INGEST-002",
       "category": "ingestion",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "Fetch topic details and posts",
       "description": "For topics identified as potentially relevant, fetch the full topic with its posts using /t/{id}.json. Retrieve enough context for the LLM to classify — at minimum the original post and latest replies.",
       "acceptanceCriteria": [
