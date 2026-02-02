@@ -4,6 +4,8 @@ import type { HallMonitorConfig } from "./config.js";
 import { DiscourseClient } from "./discourse/client.js";
 import type { Topic, TopicDetails } from "./discourse/types.js";
 import { preFilterTopics } from "./filter.js";
+import { printJsonReport } from "./output/json.js";
+import { printTerminalReport } from "./output/reporter.js";
 import {
 	closeDatabase,
 	getSeenTopic,
@@ -125,8 +127,16 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 
 		const findingsCount = results.filter((r) => r.category !== "noise").length;
 
-		// 10. Placeholder: report
-		log("Skipping report (not yet implemented)");
+		// 10. Report
+		if (config.outputFormat === "json") {
+			printJsonReport(results);
+		} else {
+			printTerminalReport(results, {
+				topicsChecked: topics.length,
+				findingsCount,
+				newSinceLastRun: findingsCount,
+			});
+		}
 
 		// 11. Log run end
 		logRunEnd(db, runId, topics.length, findingsCount);

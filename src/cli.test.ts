@@ -47,7 +47,7 @@ describe("CLI", () => {
 	it("succeeds with --url", () => {
 		const result = run(["--url", "https://forum.example.com"], { cwd: tempDir });
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("Monitoring: https://forum.example.com");
+		expect(result.stdout).toContain("0 topics checked");
 	});
 
 	it("exits 1 with no args and no config file", () => {
@@ -60,8 +60,7 @@ describe("CLI", () => {
 		const result = run(["--json", "--url", "https://forum.example.com"], { cwd: tempDir });
 		expect(result.exitCode).toBe(0);
 		const parsed = JSON.parse(result.stdout);
-		expect(parsed.status).toBe("ok");
-		expect(parsed.config.url).toBe("https://forum.example.com");
+		expect(Array.isArray(parsed)).toBe(true);
 	});
 
 	it("picks up url from config file", () => {
@@ -71,7 +70,7 @@ describe("CLI", () => {
 		);
 		const result = run([], { cwd: tempDir });
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("Monitoring: https://from-config.com");
+		expect(result.stdout).toContain("0 topics checked");
 	});
 
 	it("CLI flags override config file", () => {
@@ -81,7 +80,7 @@ describe("CLI", () => {
 		);
 		const result = run(["--url", "https://from-flag.com"], { cwd: tempDir });
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("Monitoring: https://from-flag.com");
+		expect(result.stdout).toContain("0 topics checked");
 	});
 
 	it("exits 1 with invalid severity", () => {

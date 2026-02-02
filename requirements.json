@@ -152,7 +152,7 @@
       "id": "OUTPUT-001",
       "category": "output",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "Terminal report output",
       "description": "After analysis, print a human-readable report to stdout. Group findings by severity, show category labels, one-line summaries, and links back to the original forum topics. Use color and formatting for readability.",
       "acceptanceCriteria": [
@@ -167,7 +167,7 @@
       "id": "OUTPUT-002",
       "category": "output",
       "priority": "P0",
-      "status": "proposed",
+      "status": "done",
       "title": "JSON output mode",
       "description": "Support --json flag to output the full analysis results as structured JSON to stdout. This enables integration with CI pipelines, dashboards, and other tooling.",
       "acceptanceCriteria": [
