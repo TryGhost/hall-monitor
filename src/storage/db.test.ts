@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	closeDatabase,
 	getSeenTopic,
+	hasAnalysisResult,
 	logRunEnd,
 	logRunStart,
 	openDatabase,
+	saveAnalysisResult,
 	upsertSeenTopic,
 } from "./db.js";
 
@@ -107,6 +109,33 @@ describe("storage/db", () => {
 
 			expect(second?.last_post_number).toBe(10);
 			expect(String(second?.last_checked_at) >= String(first?.last_checked_at)).toBe(true);
+		});
+	});
+
+	describe("hasAnalysisResult", () => {
+		beforeEach(() => {
+			db = openDatabase(join(tempDir, "test.db"));
+		});
+
+		it("returns false for topic with no analysis", () => {
+			upsertSeenTopic(db, 42, 5);
+			expect(hasAnalysisResult(db, 42)).toBe(false);
+		});
+
+		it("returns true for topic with analysis result", () => {
+			upsertSeenTopic(db, 42, 5);
+			saveAnalysisResult(db, {
+				topicId: 42,
+				category: "bug-report",
+				severity: "high",
+				summary: "A bug",
+				reasoning: "Reason",
+			});
+			expect(hasAnalysisResult(db, 42)).toBe(true);
+		});
+
+		it("returns false for unknown topic", () => {
+			expect(hasAnalysisResult(db, 999)).toBe(false);
 		});
 	});
 

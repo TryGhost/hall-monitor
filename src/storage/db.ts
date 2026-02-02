@@ -59,6 +59,11 @@ export function upsertSeenTopic(
 	).run(topicId, lastPostNumber, now);
 }
 
+export function hasAnalysisResult(db: Database.Database, topicId: number): boolean {
+	const row = db.prepare("SELECT 1 FROM analysis_results WHERE topic_id = ? LIMIT 1").get(topicId);
+	return row !== undefined;
+}
+
 export function saveAnalysisResult(
 	db: Database.Database,
 	result: {

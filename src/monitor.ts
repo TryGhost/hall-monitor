@@ -9,6 +9,7 @@ import { printTerminalReport } from "./output/reporter.js";
 import {
 	closeDatabase,
 	getSeenTopic,
+	hasAnalysisResult,
 	logRunEnd,
 	logRunStart,
 	openDatabase,
@@ -49,9 +50,10 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 		const topics = await client.fetchLatestTopics(config.checkIntervalTopics);
 		log(`Fetched ${topics.length} topics`);
 
-		// 5. Identify new/updated topics
+		// 5. Identify new/updated/pending topics
 		let newCount = 0;
 		let updatedCount = 0;
+		let pendingCount = 0;
 		let unchangedCount = 0;
 		const relevantTopics: Topic[] = [];
 
@@ -68,12 +70,17 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 			} else if (topic.postsCount > seen.last_post_number) {
 				updatedCount++;
 				relevantTopics.push(topic);
+			} else if (!hasAnalysisResult(db, topic.id)) {
+				pendingCount++;
+				relevantTopics.push(topic);
 			} else {
 				unchangedCount++;
 			}
 		}
 
-		log(`Topics: ${newCount} new, ${updatedCount} updated, ${unchangedCount} unchanged`);
+		log(
+			`Topics: ${newCount} new, ${updatedCount} updated, ${pendingCount} pending, ${unchangedCount} unchanged`,
+		);
 
 		// 5a. Pre-filter relevant topics
 		const { passed, filtered } = preFilterTopics(relevantTopics, config);

@@ -12,7 +12,13 @@ import type {
 	DiscourseTopicListResponse,
 } from "./discourse/types.js";
 import { runMonitor } from "./monitor.js";
-import { closeDatabase, getSeenTopic, openDatabase, upsertSeenTopic } from "./storage/db.js";
+import {
+	closeDatabase,
+	getSeenTopic,
+	openDatabase,
+	saveAnalysisResult,
+	upsertSeenTopic,
+} from "./storage/db.js";
 
 vi.mock("./analysis/classifier.js", () => ({
 	classifyTopic: vi.fn(),
@@ -177,10 +183,17 @@ describe("monitor", () => {
 	});
 
 	it("skips unchanged topics", async () => {
-		// Pre-seed a seen topic with 3 posts
+		// Pre-seed a seen topic with 3 posts and an analysis result
 		const dbPath = join(tempDir, "test.db");
 		const db = openDatabase(dbPath);
 		upsertSeenTopic(db, 10, 3);
+		saveAnalysisResult(db, {
+			topicId: 10,
+			category: "noise",
+			severity: "low",
+			summary: "Nothing here",
+			reasoning: "Not actionable",
+		});
 		closeDatabase(db);
 
 		// Return topic 10 with same 3 posts (unchanged)
@@ -195,6 +208,31 @@ describe("monitor", () => {
 		expect(topicLine).toBeDefined();
 		expect(topicLine).toContain("1 unchanged");
 		expect(topicLine).toContain("0 new");
+	});
+
+	it("retries seen topics that were never classified", async () => {
+		// Pre-seed a seen topic with NO analysis result (e.g. previous run failed)
+		const dbPath = join(tempDir, "test.db");
+		const db = openDatabase(dbPath);
+		upsertSeenTopic(db, 10, 3);
+		closeDatabase(db);
+
+		// Return topic 10 with same 3 posts — but it has no analysis result
+		const topics = [makeTopic({ id: 10, posts_count: 3 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+
+		const config = makeConfig({ dbPath });
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		const topicLine = logs.find((l) => l.includes("pending"));
+		expect(topicLine).toBeDefined();
+		expect(topicLine).toContain("1 pending");
+
+		// Should have fetched details (1 for /latest.json + 1 for /t/10.json)
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[1][0]).toContain("/t/10.json");
 	});
 
 	it("updates seen_topics for all fetched topics", async () => {
@@ -266,7 +304,7 @@ describe("monitor", () => {
 
 		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
 		expect(logs.some((l) => l.includes("Fetched 0 topics"))).toBe(true);
-		expect(logs.some((l) => l.includes("0 new, 0 updated, 0 unchanged"))).toBe(true);
+		expect(logs.some((l) => l.includes("0 new, 0 updated, 0 pending, 0 unchanged"))).toBe(true);
 		expect(logs.some((l) => l.includes("0 topics checked"))).toBe(true);
 	});
 
@@ -307,6 +345,13 @@ describe("monitor", () => {
 		const dbPath = join(tempDir, "test.db");
 		const db = openDatabase(dbPath);
 		upsertSeenTopic(db, 10, 3);
+		saveAnalysisResult(db, {
+			topicId: 10,
+			category: "noise",
+			severity: "low",
+			summary: "Nothing here",
+			reasoning: "Not actionable",
+		});
 		closeDatabase(db);
 
 		// Topic 10 still has 3 posts (unchanged)

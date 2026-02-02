@@ -85,7 +85,8 @@
       "acceptanceCriteria": [
         "Compares fetched topic list against seen_topics table",
         "Identifies new topics (not in seen_topics) and updated topics (last_post_number increased)",
-        "Only fetches full details for new/updated topics",
+        "Retries seen topics that have no analysis result (e.g. prior classification failed)",
+        "Only fetches full details for new/updated/pending topics",
         "Updates seen_topics after successful processing",
         "First run processes all fetched topics (no prior state)"
       ]
@@ -211,7 +212,7 @@
       "id": "CONFIG-002",
       "category": "configuration",
       "priority": "P1",
-      "status": "in-progress",
+      "status": "done",
       "title": "Anthropic API key configuration",
       "description": "The Anthropic API key for LLM analysis must be configurable via multiple sources with clear precedence: CLI flag > environment variable (ANTHROPIC_API_KEY) > config file.",
       "acceptanceCriteria": [
