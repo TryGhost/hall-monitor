@@ -2,6 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TopicDetails } from "../discourse/types.js";
 import type { AlertCategory, ClassificationResult, Severity } from "./types.js";
 
+export class AnthropicAuthError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "AnthropicAuthError";
+	}
+}
+
 const SYSTEM_PROMPT = `You are an expert open-source community analyst. Classify forum topics by their content and urgency for project maintainers.
 
 Given a topic with its title, original post, and recent replies, classify it into one category and assign a severity.
@@ -126,6 +133,12 @@ export async function classifyTopic(
 		} catch (err: unknown) {
 			lastError = err;
 			const status = err instanceof Anthropic.APIError ? err.status : undefined;
+
+			if (status === 401 || status === 403) {
+				throw new AnthropicAuthError(
+					`Anthropic API authentication failed (HTTP ${status}). Check your API key.`,
+				);
+			}
 
 			if (status !== undefined && status >= 500 && attempt === 0) {
 				continue;

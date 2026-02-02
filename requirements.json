@@ -211,7 +211,7 @@
       "id": "CONFIG-002",
       "category": "configuration",
       "priority": "P1",
-      "status": "proposed",
+      "status": "in-progress",
       "title": "Anthropic API key configuration",
       "description": "The Anthropic API key for LLM analysis must be configurable via multiple sources with clear precedence: CLI flag > environment variable (ANTHROPIC_API_KEY) > config file.",
       "acceptanceCriteria": [
@@ -219,7 +219,8 @@
         "Falls back to ANTHROPIC_API_KEY environment variable",
         "Falls back to anthropicApiKey in .hall-monitor.json",
         "Exits with clear error message if no key is found",
-        "Never logs or displays the API key"
+        "Never logs or displays the API key",
+        "Throws AnthropicAuthError immediately on 401/403 from the API"
       ]
     },
     {

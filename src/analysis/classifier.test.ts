@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TopicDetails } from "../discourse/types.js";
-import { classifyTopic, formatTopicMessage, parseClassification } from "./classifier.js";
+import {
+	AnthropicAuthError,
+	classifyTopic,
+	formatTopicMessage,
+	parseClassification,
+} from "./classifier.js";
 
 vi.mock("@anthropic-ai/sdk", () => {
 	const createMock = vi.fn();
@@ -148,11 +153,31 @@ describe("classifier", () => {
 		);
 	});
 
-	it("returns null immediately on 4xx error (no retry)", async () => {
+	it("throws AnthropicAuthError on 401", async () => {
 		const createMock = await getCreateMock();
 		const APIError = await getAPIError();
 
 		createMock.mockRejectedValueOnce(new APIError(401, "Unauthorized"));
+
+		await expect(classifyTopic(makeTopic(), "sk-test-key")).rejects.toThrow(AnthropicAuthError);
+		expect(createMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("throws AnthropicAuthError on 403", async () => {
+		const createMock = await getCreateMock();
+		const APIError = await getAPIError();
+
+		createMock.mockRejectedValueOnce(new APIError(403, "Forbidden"));
+
+		await expect(classifyTopic(makeTopic(), "sk-test-key")).rejects.toThrow(AnthropicAuthError);
+		expect(createMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("returns null immediately on non-auth 4xx error (no retry)", async () => {
+		const createMock = await getCreateMock();
+		const APIError = await getAPIError();
+
+		createMock.mockRejectedValueOnce(new APIError(400, "Bad Request"));
 
 		const result = await classifyTopic(makeTopic(), "sk-test-key");
 

@@ -143,13 +143,21 @@ describe("loadConfigFile", () => {
 
 describe("resolveConfig", () => {
 	let tempDir: string;
+	const originalEnv = process.env.ANTHROPIC_API_KEY;
 
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "hall-monitor-test-"));
+		process.env.ANTHROPIC_API_KEY = "sk-test-env";
 	});
 
 	afterEach(() => {
 		rmSync(tempDir, { recursive: true });
+		if (originalEnv !== undefined) {
+			process.env.ANTHROPIC_API_KEY = originalEnv;
+		} else {
+			// biome-ignore lint/performance/noDelete: process.env requires delete to unset
+			delete process.env.ANTHROPIC_API_KEY;
+		}
 	});
 
 	it("resolves config from CLI flags only", () => {
@@ -244,7 +252,7 @@ describe("resolveConfig", () => {
 				categories: [],
 				tags: [],
 				checkIntervalTopics: 100,
-				anthropicApiKey: null,
+				anthropicApiKey: "sk-test-env",
 				model: "haiku",
 				severityThreshold: "medium",
 				outputFormat: "terminal",
@@ -257,5 +265,46 @@ describe("resolveConfig", () => {
 		} finally {
 			process.chdir(originalCwd);
 		}
+	});
+
+	it("throws when no Anthropic API key is provided", () => {
+		// biome-ignore lint/performance/noDelete: process.env requires delete to unset
+		delete process.env.ANTHROPIC_API_KEY;
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			expect(() => resolveConfig({ url: "https://forum.example.com" })).toThrow(
+				"No Anthropic API key provided",
+			);
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("reads anthropicApiKey from ANTHROPIC_API_KEY env var", () => {
+		process.env.ANTHROPIC_API_KEY = "sk-from-env";
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({ url: "https://forum.example.com" });
+			expect(config.anthropicApiKey).toBe("sk-from-env");
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("prefers config file anthropicApiKey over env var", () => {
+		process.env.ANTHROPIC_API_KEY = "sk-from-env";
+		const configPath = join(tempDir, ".hall-monitor.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				url: "https://forum.example.com",
+				anthropicApiKey: "sk-from-file",
+			}),
+		);
+
+		const config = resolveConfig({ config: configPath });
+		expect(config.anthropicApiKey).toBe("sk-from-file");
 	});
 });

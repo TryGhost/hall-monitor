@@ -235,5 +235,15 @@ export function resolveConfig(flags: CliFlags): HallMonitorConfig {
 		);
 	}
 
+	if (!merged.anthropicApiKey) {
+		merged.anthropicApiKey = process.env.ANTHROPIC_API_KEY ?? null;
+	}
+
+	if (!merged.anthropicApiKey) {
+		throw new Error(
+			"No Anthropic API key provided. Set 'anthropicApiKey' in .hall-monitor.json or the ANTHROPIC_API_KEY environment variable.",
+		);
+	}
+
 	return merged as HallMonitorConfig;
 }
