@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClassificationResult } from "./analysis/types.js";
 import type { HallMonitorConfig } from "./config.js";
 import type {
+	DiscourseCategoriesResponse,
 	DiscourseRawPost,
 	DiscourseRawTopic,
 	DiscourseTopicDetailResponse,
@@ -573,5 +574,115 @@ describe("monitor", () => {
 		expect(row.category).toBe("security");
 		expect(row.severity).toBe("critical");
 		expect(row.summary).toBe("Security issue found");
+	});
+
+	it("fetches from categories when configured", async () => {
+		// First call: /categories.json
+		const categoriesResp: DiscourseCategoriesResponse = {
+			category_list: {
+				categories: [{ id: 5, name: "Bugs", slug: "bugs" }],
+			},
+		};
+		fetchMock.mockResolvedValueOnce(jsonResponse(categoriesResp));
+		// Second call: /c/bugs/5.json?page=0
+		const catTopics = [makeTopic({ id: 10 }), makeTopic({ id: 20 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(catTopics)));
+		// Detail fetches
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			categories: ["bugs"],
+		});
+		await runMonitor(config);
+
+		// Verify /categories.json was called
+		expect(fetchMock.mock.calls[0][0]).toContain("/categories.json");
+		// Verify /c/bugs/5.json was called
+		expect(fetchMock.mock.calls[1][0]).toContain("/c/bugs/5.json");
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Fetched 2 topics"))).toBe(true);
+	});
+
+	it("fetches from tags when configured", async () => {
+		// /tag/security.json?page=0
+		const tagTopics = [makeTopic({ id: 30 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(tagTopics)));
+		// Detail fetch
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(30)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			tags: ["security"],
+		});
+		await runMonitor(config);
+
+		expect(fetchMock.mock.calls[0][0]).toContain("/tag/security.json");
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Fetched 1 topics"))).toBe(true);
+	});
+
+	it("deduplicates topics across overlapping sources", async () => {
+		// /categories.json
+		const categoriesResp: DiscourseCategoriesResponse = {
+			category_list: {
+				categories: [{ id: 5, name: "Bugs", slug: "bugs" }],
+			},
+		};
+		fetchMock.mockResolvedValueOnce(jsonResponse(categoriesResp));
+		// /c/bugs/5.json — returns topics 10, 20
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(makeResponse([makeTopic({ id: 10 }), makeTopic({ id: 20 })])),
+		);
+		// /tag/important.json — returns topics 20, 30 (20 is a duplicate)
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(makeResponse([makeTopic({ id: 20 }), makeTopic({ id: 30 })])),
+		);
+		// Detail fetches for 3 unique topics
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(30)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			categories: ["bugs"],
+			tags: ["important"],
+		});
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		// Should have 3 unique topics, not 4
+		expect(logs.some((l) => l.includes("Fetched 3 topics"))).toBe(true);
+	});
+
+	it("falls back to /latest.json when no categories or tags configured", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([makeTopic({ id: 1 })])));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(1)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			categories: [],
+			tags: [],
+		});
+		await runMonitor(config);
+
+		expect(fetchMock.mock.calls[0][0]).toContain("/latest.json");
+	});
+
+	it("handles failed category resolution gracefully", async () => {
+		// /categories.json fails
+		fetchMock.mockResolvedValueOnce(new Response("Server Error", { status: 500 }));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			categories: ["nonexistent"],
+		});
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Fetched 0 topics"))).toBe(true);
 	});
 });

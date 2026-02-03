@@ -1,4 +1,6 @@
 import type {
+	CategoryRef,
+	DiscourseCategoriesResponse,
 	DiscoursePostsResponse,
 	DiscourseRawPost,
 	DiscourseRawTopic,
@@ -106,11 +108,49 @@ export class DiscourseClient {
 	 * Paginates until `limit` topics are collected or no more pages exist.
 	 */
 	async fetchLatestTopics(limit: number = DEFAULT_LIMIT): Promise<Topic[]> {
+		return this.fetchTopicList("/latest.json", limit);
+	}
+
+	/** Fetch all categories from the Discourse instance. */
+	async fetchCategories(): Promise<CategoryRef[]> {
+		const response = await this.request("/categories.json");
+		if (!response) return [];
+
+		let body: DiscourseCategoriesResponse;
+		try {
+			body = (await response.json()) as DiscourseCategoriesResponse;
+		} catch {
+			console.error("Failed to parse categories response as JSON");
+			return [];
+		}
+
+		const raw = body.category_list?.categories;
+		if (!raw) return [];
+
+		return raw.map((c) => ({ slug: c.slug, id: c.id }));
+	}
+
+	/** Fetch topics from a specific category. */
+	async fetchCategoryTopics(
+		slug: string,
+		id: number,
+		limit: number = DEFAULT_LIMIT,
+	): Promise<Topic[]> {
+		return this.fetchTopicList(`/c/${slug}/${id}.json`, limit);
+	}
+
+	/** Fetch topics with a specific tag. */
+	async fetchTagTopics(tagName: string, limit: number = DEFAULT_LIMIT): Promise<Topic[]> {
+		return this.fetchTopicList(`/tag/${tagName}.json`, limit);
+	}
+
+	private async fetchTopicList(basePath: string, limit: number): Promise<Topic[]> {
 		const topics: Topic[] = [];
 		let page = 0;
 
 		while (topics.length < limit) {
-			const response = await this.request(`/latest.json?page=${page}`);
+			const separator = basePath.includes("?") ? "&" : "?";
+			const response = await this.request(`${basePath}${separator}page=${page}`);
 			if (!response) break;
 
 			let body: DiscourseTopicListResponse;
@@ -181,6 +221,42 @@ export class DiscourseClient {
 
 		return response;
 	}
+}
+
+/**
+ * Resolve user-provided category strings (slugs or numeric IDs) to CategoryRef pairs.
+ * Warns to stderr for unresolved entries but does not throw.
+ */
+export async function resolveCategories(
+	client: DiscourseClient,
+	configured: string[],
+): Promise<CategoryRef[]> {
+	if (configured.length === 0) return [];
+
+	const allCategories = await client.fetchCategories();
+	const resolved: CategoryRef[] = [];
+
+	for (const input of configured) {
+		// Try numeric ID first
+		const numId = Number(input);
+		if (!Number.isNaN(numId) && Number.isInteger(numId)) {
+			const match = allCategories.find((c) => c.id === numId);
+			if (match) {
+				resolved.push(match);
+				continue;
+			}
+		}
+
+		// Try slug match
+		const match = allCategories.find((c) => c.slug === input);
+		if (match) {
+			resolved.push(match);
+		} else {
+			console.error(`Warning: could not resolve category "${input}" — skipping`);
+		}
+	}
+
+	return resolved;
 }
 
 export function stripHtml(html: string): string {

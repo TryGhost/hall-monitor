@@ -15,6 +15,8 @@ program
 	.option("--json", "Output as JSON")
 	.option("--severity <level>", "Minimum severity threshold (critical, high, medium, low)")
 	.option("--db <path>", "Path to SQLite state database")
+	.option("--categories <slugs>", "Comma-separated category slugs or IDs to monitor")
+	.option("--tags <tags>", "Comma-separated tag names to monitor")
 	.action(async (opts) => {
 		try {
 			const config = resolveConfig({
@@ -25,6 +27,8 @@ program
 				json: opts.json,
 				severity: opts.severity,
 				db: opts.db,
+				categories: opts.categories,
+				tags: opts.tags,
 			});
 
 			await runMonitor(config);

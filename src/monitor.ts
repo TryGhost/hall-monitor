@@ -1,7 +1,7 @@
 import { classifyTopic } from "./analysis/classifier.js";
 import type { ClassificationResult } from "./analysis/types.js";
 import type { HallMonitorConfig } from "./config.js";
-import { DiscourseClient } from "./discourse/client.js";
+import { DiscourseClient, resolveCategories } from "./discourse/client.js";
 import type { Topic, TopicDetails } from "./discourse/types.js";
 import { preFilterTopics } from "./filter.js";
 import { printJsonReport } from "./output/json.js";
@@ -47,7 +47,39 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 		log(`Discourse client ready: ${config.url}`);
 
 		// 4. Fetch topics
-		const topics = await client.fetchLatestTopics(config.checkIntervalTopics);
+		const hasCategories = config.categories.length > 0;
+		const hasTags = config.tags.length > 0;
+		let topics: Topic[];
+
+		if (hasCategories || hasTags) {
+			const categoryRefs = await resolveCategories(client, config.categories);
+			const sourceCount = categoryRefs.length + config.tags.length;
+			const perSourceLimit =
+				sourceCount > 0
+					? Math.ceil(config.checkIntervalTopics / sourceCount)
+					: config.checkIntervalTopics;
+
+			const allTopics: Topic[] = [];
+			for (const ref of categoryRefs) {
+				const catTopics = await client.fetchCategoryTopics(ref.slug, ref.id, perSourceLimit);
+				allTopics.push(...catTopics);
+			}
+			for (const tag of config.tags) {
+				const tagTopics = await client.fetchTagTopics(tag, perSourceLimit);
+				allTopics.push(...tagTopics);
+			}
+
+			// Deduplicate by topic ID
+			const seen = new Map<number, Topic>();
+			for (const topic of allTopics) {
+				if (!seen.has(topic.id)) {
+					seen.set(topic.id, topic);
+				}
+			}
+			topics = Array.from(seen.values());
+		} else {
+			topics = await client.fetchLatestTopics(config.checkIntervalTopics);
+		}
 		log(`Fetched ${topics.length} topics`);
 
 		// 5. Identify new/updated/pending topics

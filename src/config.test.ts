@@ -307,4 +307,68 @@ describe("resolveConfig", () => {
 		const config = resolveConfig({ config: configPath });
 		expect(config.anthropicApiKey).toBe("sk-from-file");
 	});
+
+	it("parses --categories as comma-separated strings", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({
+				url: "https://forum.example.com",
+				categories: "bugs, feature-requests, general",
+			});
+			expect(config.categories).toEqual(["bugs", "feature-requests", "general"]);
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("parses --tags as comma-separated strings", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({
+				url: "https://forum.example.com",
+				tags: "security, critical",
+			});
+			expect(config.tags).toEqual(["security", "critical"]);
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("trims whitespace and filters empty strings from categories/tags", () => {
+		const originalCwd = process.cwd();
+		process.chdir(tempDir);
+		try {
+			const config = resolveConfig({
+				url: "https://forum.example.com",
+				categories: " bugs , , general ",
+				tags: "  ,security,  ",
+			});
+			expect(config.categories).toEqual(["bugs", "general"]);
+			expect(config.tags).toEqual(["security"]);
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	it("CLI categories/tags override config file values", () => {
+		const configPath = join(tempDir, ".hall-monitor.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				url: "https://forum.example.com",
+				categories: ["from-file"],
+				tags: ["file-tag"],
+			}),
+		);
+
+		const config = resolveConfig({
+			config: configPath,
+			categories: "from-cli",
+			tags: "cli-tag",
+		});
+		expect(config.categories).toEqual(["from-cli"]);
+		expect(config.tags).toEqual(["cli-tag"]);
+	});
 });

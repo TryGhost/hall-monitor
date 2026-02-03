@@ -65,7 +65,7 @@
       "id": "INGEST-003",
       "category": "ingestion",
       "priority": "P1",
-      "status": "proposed",
+      "status": "done",
       "title": "Fetch topics by category and tag",
       "description": "Allow monitoring specific Discourse categories and/or tags instead of (or in addition to) the global latest feed. Users configure this via category slugs/IDs and tag names.",
       "acceptanceCriteria": [

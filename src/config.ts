@@ -195,6 +195,8 @@ export interface CliFlags {
 	json?: boolean;
 	severity?: string;
 	db?: string;
+	categories?: string;
+	tags?: string;
 }
 
 export function resolveConfig(flags: CliFlags): HallMonitorConfig {
@@ -227,6 +229,18 @@ export function resolveConfig(flags: CliFlags): HallMonitorConfig {
 	}
 	if (flags.db) {
 		merged.dbPath = flags.db;
+	}
+	if (flags.categories) {
+		merged.categories = flags.categories
+			.split(",")
+			.map((s) => s.trim())
+			.filter((s) => s !== "");
+	}
+	if (flags.tags) {
+		merged.tags = flags.tags
+			.split(",")
+			.map((s) => s.trim())
+			.filter((s) => s !== "");
 	}
 
 	if (!merged.url) {

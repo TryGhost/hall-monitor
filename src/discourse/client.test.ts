@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DiscourseClient, stripHtml } from "./client.js";
+import { DiscourseClient, resolveCategories, stripHtml } from "./client.js";
 import type {
+	DiscourseCategoriesResponse,
 	DiscourseRawPost,
 	DiscourseRawTopic,
 	DiscourseTopicDetailResponse,
@@ -441,5 +442,217 @@ describe("fetchTopicDetails", () => {
 		const result = await client.fetchTopicDetails(42);
 
 		expect(result).toBeNull();
+	});
+});
+
+function makeCategoriesResponse(
+	categories: { id: number; name: string; slug: string }[],
+): DiscourseCategoriesResponse {
+	return { category_list: { categories } };
+}
+
+describe("fetchCategories", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("parses /categories.json and returns CategoryRef[]", async () => {
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(
+				makeCategoriesResponse([
+					{ id: 1, name: "General", slug: "general" },
+					{ id: 5, name: "Bugs", slug: "bugs" },
+				]),
+			),
+		);
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const categories = await client.fetchCategories();
+
+		expect(fetchMock.mock.calls[0][0]).toBe("https://forum.example.com/categories.json");
+		expect(categories).toEqual([
+			{ slug: "general", id: 1 },
+			{ slug: "bugs", id: 5 },
+		]);
+	});
+
+	it("returns empty array on HTTP error", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("Server Error", { status: 500 }));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const categories = await client.fetchCategories();
+
+		expect(categories).toEqual([]);
+	});
+
+	it("returns empty array on malformed JSON", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("not json", { status: 200 }));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const categories = await client.fetchCategories();
+
+		expect(categories).toEqual([]);
+	});
+});
+
+describe("fetchCategoryTopics", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("fetches from /c/{slug}/{id}.json", async () => {
+		const raw = makeTopic({ id: 10 });
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([raw])));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const topics = await client.fetchCategoryTopics("bugs", 5, 10);
+
+		expect(fetchMock.mock.calls[0][0]).toBe("https://forum.example.com/c/bugs/5.json?page=0");
+		expect(topics).toHaveLength(1);
+		expect(topics[0].id).toBe(10);
+	});
+
+	it("paginates and respects limit", async () => {
+		const page0 = [makeTopic({ id: 1 }), makeTopic({ id: 2 })];
+		const page1 = [makeTopic({ id: 3 })];
+
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(makeResponse(page0, "/c/bugs/5.json?page=1")))
+			.mockResolvedValueOnce(jsonResponse(makeResponse(page1)));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const topics = await client.fetchCategoryTopics("bugs", 5, 2);
+
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(topics).toHaveLength(2);
+	});
+});
+
+describe("fetchTagTopics", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("fetches from /tag/{name}.json", async () => {
+		const raw = makeTopic({ id: 20 });
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([raw])));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const topics = await client.fetchTagTopics("security", 10);
+
+		expect(fetchMock.mock.calls[0][0]).toBe("https://forum.example.com/tag/security.json?page=0");
+		expect(topics).toHaveLength(1);
+		expect(topics[0].id).toBe(20);
+	});
+
+	it("paginates and respects limit", async () => {
+		const page0 = [makeTopic({ id: 1 }), makeTopic({ id: 2 })];
+		const page1 = [makeTopic({ id: 3 })];
+
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(makeResponse(page0, "/tag/security.json?page=1")))
+			.mockResolvedValueOnce(jsonResponse(makeResponse(page1)));
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const topics = await client.fetchTagTopics("security", 2);
+
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(topics).toHaveLength(2);
+	});
+});
+
+describe("resolveCategories", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it("resolves slugs to CategoryRef pairs", async () => {
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(
+				makeCategoriesResponse([
+					{ id: 1, name: "General", slug: "general" },
+					{ id: 5, name: "Bugs", slug: "bugs" },
+				]),
+			),
+		);
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const refs = await resolveCategories(client, ["bugs"]);
+
+		expect(refs).toEqual([{ slug: "bugs", id: 5 }]);
+	});
+
+	it("resolves numeric IDs to CategoryRef pairs", async () => {
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(
+				makeCategoriesResponse([
+					{ id: 1, name: "General", slug: "general" },
+					{ id: 5, name: "Bugs", slug: "bugs" },
+				]),
+			),
+		);
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const refs = await resolveCategories(client, ["5"]);
+
+		expect(refs).toEqual([{ slug: "bugs", id: 5 }]);
+	});
+
+	it("warns on unknown inputs and skips them", async () => {
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(makeCategoriesResponse([{ id: 1, name: "General", slug: "general" }])),
+		);
+
+		const client = new DiscourseClient("https://forum.example.com");
+		const refs = await resolveCategories(client, ["nonexistent"]);
+
+		expect(refs).toEqual([]);
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining('could not resolve category "nonexistent"'),
+		);
+	});
+
+	it("returns empty array for empty input", async () => {
+		const client = new DiscourseClient("https://forum.example.com");
+		const refs = await resolveCategories(client, []);
+
+		expect(refs).toEqual([]);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });

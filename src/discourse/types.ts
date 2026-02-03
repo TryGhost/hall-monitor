@@ -1,3 +1,23 @@
+/** Raw category shape from the Discourse API. */
+export interface DiscourseRawCategory {
+	id: number;
+	name: string;
+	slug: string;
+}
+
+/** Raw response shape from /categories.json. */
+export interface DiscourseCategoriesResponse {
+	category_list: {
+		categories: DiscourseRawCategory[];
+	};
+}
+
+/** Resolved category reference used internally. */
+export interface CategoryRef {
+	slug: string;
+	id: number;
+}
+
 /** Clean internal representation of a Discourse topic. */
 export interface Topic {
 	id: number;
