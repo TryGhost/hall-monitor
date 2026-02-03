@@ -11,7 +11,7 @@ function run(args: string[], options?: { cwd?: string }): { stdout: string; exit
 		const stdout = execFileSync("node", [CLI_PATH, ...args], {
 			encoding: "utf-8",
 			cwd: options?.cwd,
-			env: { ...process.env, NO_COLOR: "1" },
+			env: { ...process.env, NO_COLOR: "1", ANTHROPIC_API_KEY: "sk-ant-test-dummy" },
 		});
 		return { stdout, exitCode: 0 };
 	} catch (err: unknown) {
