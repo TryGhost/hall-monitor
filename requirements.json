@@ -117,7 +117,8 @@
         "Calls Claude API with a well-crafted system prompt defining the OSS maintainer context",
         "Sends topic title + OP text + up to 5 reply excerpts as user message",
         "Parses structured response into { category, severity, summary, reasoning }",
-        "Handles LLM API errors gracefully (retry once on 5xx, skip on persistent failure)",
+        "Handles LLM API errors with fail-fast behavior (retry once on 5xx, abort run on persistent failure)",
+        "Throws ClassificationError with diagnostic details (parse reason, response preview) on malformed LLM output",
         "Uses Haiku model by default for cost efficiency, configurable to Sonnet for higher accuracy"
       ]
     },

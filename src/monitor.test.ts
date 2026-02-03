@@ -539,6 +539,43 @@ describe("monitor", () => {
 		expect(logs.some((l) => l.includes("Skipping LLM analysis"))).toBe(true);
 	});
 
+	it("aborts on first classification failure", async () => {
+		const { classifyTopic } = await import("./analysis/classifier.js");
+		const classifyMock = vi.mocked(classifyTopic);
+
+		const classificationError = new Error(
+			"Malformed LLM response for topic 20: response is not valid JSON",
+		);
+		classificationError.name = "ClassificationError";
+
+		classifyMock
+			.mockResolvedValueOnce({
+				topicId: 10,
+				topicUrl: "https://forum.example.com/t/topic-10/10",
+				title: "Topic 10",
+				category: "bug-report",
+				severity: "high",
+				summary: "A bug",
+				reasoning: "Reason",
+			})
+			.mockRejectedValueOnce(classificationError);
+
+		const topics = [makeTopic({ id: 10 }), makeTopic({ id: 20 }), makeTopic({ id: 30 })];
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse(topics)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(10)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(20)));
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeTopicDetailResponse(30)));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			anthropicApiKey: "sk-test",
+		});
+
+		await expect(runMonitor(config)).rejects.toThrow(/Malformed LLM response for topic 20/);
+		// Topic 30 should never have been attempted
+		expect(classifyMock).toHaveBeenCalledTimes(2);
+	});
+
 	it("saves analysis results to the database", async () => {
 		const { classifyTopic } = await import("./analysis/classifier.js");
 		const classifyMock = vi.mocked(classifyTopic);

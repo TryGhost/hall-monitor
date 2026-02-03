@@ -154,13 +154,9 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 			log(`Analyzing ${topicDetails.length} topics...`);
 			for (const details of topicDetails) {
 				const result = await classifyTopic(details, config.anthropicApiKey, config.model);
-				if (result) {
-					results.push(result);
-					saveAnalysisResult(db, result);
-					log(`Topic ${details.id}: [${result.category}] ${result.severity} — ${result.summary}`);
-				} else {
-					log(`Topic ${details.id}: classification failed`);
-				}
+				results.push(result);
+				saveAnalysisResult(db, result);
+				log(`Topic ${details.id}: [${result.category}] ${result.severity} — ${result.summary}`);
 			}
 		}
 

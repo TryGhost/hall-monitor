@@ -9,6 +9,13 @@ export class AnthropicAuthError extends Error {
 	}
 }
 
+export class ClassificationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ClassificationError";
+	}
+}
+
 const SYSTEM_PROMPT = `You are an expert open-source community analyst. Classify forum topics by their content and urgency for project maintainers.
 
 Given a topic with its title, original post, and recent replies, classify it into one category and assign a severity.
@@ -64,39 +71,55 @@ function formatTopicMessage(topic: TopicDetails): string {
 	return message;
 }
 
-function parseClassification(
-	text: string,
-): { category: AlertCategory; severity: Severity; summary: string; reasoning: string } | null {
+type ParseSuccess = {
+	category: AlertCategory;
+	severity: Severity;
+	summary: string;
+	reasoning: string;
+};
+type ParseFailure = { error: string };
+type ParseResult = ParseSuccess | ParseFailure;
+
+function parseClassification(text: string): ParseResult {
+	let parsed: unknown;
 	try {
-		const parsed = JSON.parse(text);
-
-		if (
-			typeof parsed !== "object" ||
-			parsed === null ||
-			!VALID_CATEGORIES.includes(parsed.category) ||
-			!VALID_SEVERITIES.includes(parsed.severity) ||
-			typeof parsed.summary !== "string" ||
-			typeof parsed.reasoning !== "string"
-		) {
-			return null;
-		}
-
-		return {
-			category: parsed.category,
-			severity: parsed.severity,
-			summary: parsed.summary,
-			reasoning: parsed.reasoning,
-		};
+		parsed = JSON.parse(text);
 	} catch {
-		return null;
+		return { error: "response is not valid JSON" };
 	}
+
+	if (typeof parsed !== "object" || parsed === null) {
+		return { error: "response is not a JSON object" };
+	}
+
+	const obj = parsed as Record<string, unknown>;
+
+	if (!VALID_CATEGORIES.includes(obj.category as AlertCategory)) {
+		return { error: `invalid category: ${JSON.stringify(obj.category)}` };
+	}
+	if (!VALID_SEVERITIES.includes(obj.severity as Severity)) {
+		return { error: `invalid severity: ${JSON.stringify(obj.severity)}` };
+	}
+	if (typeof obj.summary !== "string") {
+		return { error: "missing or invalid 'summary' field" };
+	}
+	if (typeof obj.reasoning !== "string") {
+		return { error: "missing or invalid 'reasoning' field" };
+	}
+
+	return {
+		category: obj.category as AlertCategory,
+		severity: obj.severity as Severity,
+		summary: obj.summary,
+		reasoning: obj.reasoning,
+	};
 }
 
 export async function classifyTopic(
 	topic: TopicDetails,
 	apiKey: string,
 	model?: string,
-): Promise<ClassificationResult | null> {
+): Promise<ClassificationResult> {
 	const client = new Anthropic({ apiKey });
 	const modelId = MODEL_MAP[model ?? "haiku"] ?? MODEL_MAP.haiku;
 	const userMessage = formatTopicMessage(topic);
@@ -114,14 +137,16 @@ export async function classifyTopic(
 
 			const textBlock = response.content.find((b) => b.type === "text");
 			if (!textBlock || textBlock.type !== "text") {
-				console.error(`[hall-monitor] No text response for topic ${topic.id}`);
-				return null;
+				throw new ClassificationError(`No text in LLM response for topic ${topic.id}`);
 			}
 
 			const parsed = parseClassification(textBlock.text);
-			if (!parsed) {
-				console.error(`[hall-monitor] Malformed LLM response for topic ${topic.id}`);
-				return null;
+			if ("error" in parsed) {
+				const preview =
+					textBlock.text.length > 200 ? `${textBlock.text.slice(0, 200)}…` : textBlock.text;
+				throw new ClassificationError(
+					`Malformed LLM response for topic ${topic.id}: ${parsed.error}\n  Response: ${preview}`,
+				);
 			}
 
 			return {
@@ -131,6 +156,10 @@ export async function classifyTopic(
 				...parsed,
 			};
 		} catch (err: unknown) {
+			if (err instanceof ClassificationError) {
+				throw err;
+			}
+
 			lastError = err;
 			const status = err instanceof Anthropic.APIError ? err.status : undefined;
 
@@ -147,10 +176,9 @@ export async function classifyTopic(
 		}
 	}
 
-	console.error(
-		`[hall-monitor] Classification failed for topic ${topic.id}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+	throw new ClassificationError(
+		`Classification failed for topic ${topic.id}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
 	);
-	return null;
 }
 
 export { formatTopicMessage, parseClassification, MODEL_MAP };

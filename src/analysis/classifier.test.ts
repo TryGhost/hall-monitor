@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TopicDetails } from "../discourse/types.js";
 import {
 	AnthropicAuthError,
+	ClassificationError,
 	classifyTopic,
 	formatTopicMessage,
 	parseClassification,
@@ -137,20 +138,17 @@ describe("classifier", () => {
 		expect(result?.category).toBe("feature-request");
 	});
 
-	it("returns null on persistent 5xx failure", async () => {
+	it("throws ClassificationError on persistent 5xx failure", async () => {
 		const createMock = await getCreateMock();
 		const APIError = await getAPIError();
 
 		createMock.mockRejectedValueOnce(new APIError(500, "Internal Server Error"));
 		createMock.mockRejectedValueOnce(new APIError(503, "Service Unavailable"));
 
-		const result = await classifyTopic(makeTopic(), "sk-test-key");
-
-		expect(result).toBeNull();
+		const err = await classifyTopic(makeTopic(), "sk-test-key").catch((e) => e);
+		expect(err).toBeInstanceOf(ClassificationError);
+		expect(err.message).toMatch(/Classification failed for topic 42/);
 		expect(createMock).toHaveBeenCalledTimes(2);
-		expect(stderrSpy).toHaveBeenCalledWith(
-			expect.stringContaining("Classification failed for topic 42"),
-		);
 	});
 
 	it("throws AnthropicAuthError on 401", async () => {
@@ -173,33 +171,29 @@ describe("classifier", () => {
 		expect(createMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("returns null immediately on non-auth 4xx error (no retry)", async () => {
+	it("throws ClassificationError on non-auth 4xx error (no retry)", async () => {
 		const createMock = await getCreateMock();
 		const APIError = await getAPIError();
 
 		createMock.mockRejectedValueOnce(new APIError(400, "Bad Request"));
 
-		const result = await classifyTopic(makeTopic(), "sk-test-key");
-
-		expect(result).toBeNull();
+		await expect(classifyTopic(makeTopic(), "sk-test-key")).rejects.toThrow(ClassificationError);
 		expect(createMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("handles malformed LLM response gracefully", async () => {
+	it("throws ClassificationError on malformed LLM response with details", async () => {
 		const createMock = await getCreateMock();
 		createMock.mockResolvedValueOnce({
 			content: [{ type: "text", text: "Sorry, I can't classify this." }],
 		});
 
-		const result = await classifyTopic(makeTopic(), "sk-test-key");
-
-		expect(result).toBeNull();
-		expect(stderrSpy).toHaveBeenCalledWith(
-			expect.stringContaining("Malformed LLM response for topic 42"),
-		);
+		const err = await classifyTopic(makeTopic(), "sk-test-key").catch((e) => e);
+		expect(err).toBeInstanceOf(ClassificationError);
+		expect(err.message).toMatch(/Malformed LLM response for topic 42: response is not valid JSON/);
+		expect(err.message).toContain("Sorry, I can't classify this.");
 	});
 
-	it("handles response with invalid category", async () => {
+	it("throws ClassificationError on invalid category with details", async () => {
 		const createMock = await getCreateMock();
 		createMock.mockResolvedValueOnce(
 			makeSuccessResponse({
@@ -210,8 +204,9 @@ describe("classifier", () => {
 			}),
 		);
 
-		const result = await classifyTopic(makeTopic(), "sk-test-key");
-		expect(result).toBeNull();
+		await expect(classifyTopic(makeTopic(), "sk-test-key")).rejects.toThrow(
+			/invalid category: "unknown-type"/,
+		);
 	});
 });
 
@@ -274,37 +269,41 @@ describe("parseClassification", () => {
 		});
 	});
 
-	it("returns null for invalid JSON", () => {
-		expect(parseClassification("not json")).toBeNull();
+	it("returns error for invalid JSON", () => {
+		const result = parseClassification("not json");
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toBe("response is not valid JSON");
 	});
 
-	it("returns null for missing fields", () => {
-		expect(parseClassification(JSON.stringify({ category: "bug-report" }))).toBeNull();
+	it("returns error for missing fields", () => {
+		const result = parseClassification(JSON.stringify({ category: "bug-report" }));
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toContain("invalid severity");
 	});
 
-	it("returns null for invalid category", () => {
-		expect(
-			parseClassification(
-				JSON.stringify({
-					category: "invalid",
-					severity: "high",
-					summary: "s",
-					reasoning: "r",
-				}),
-			),
-		).toBeNull();
+	it("returns error for invalid category", () => {
+		const result = parseClassification(
+			JSON.stringify({
+				category: "invalid",
+				severity: "high",
+				summary: "s",
+				reasoning: "r",
+			}),
+		);
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toContain('invalid category: "invalid"');
 	});
 
-	it("returns null for invalid severity", () => {
-		expect(
-			parseClassification(
-				JSON.stringify({
-					category: "bug-report",
-					severity: "extreme",
-					summary: "s",
-					reasoning: "r",
-				}),
-			),
-		).toBeNull();
+	it("returns error for invalid severity", () => {
+		const result = parseClassification(
+			JSON.stringify({
+				category: "bug-report",
+				severity: "extreme",
+				summary: "s",
+				reasoning: "r",
+			}),
+		);
+		expect("error" in result).toBe(true);
+		expect((result as { error: string }).error).toContain('invalid severity: "extreme"');
 	});
 });
