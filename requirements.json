@@ -229,7 +229,7 @@
       "id": "OUTPUT-004",
       "category": "output",
       "priority": "P1",
-      "status": "in-progress",
+      "status": "done",
       "title": "JSON run log files",
       "description": "After every run, save the findings and run stats to a timestamped JSON file in ~/.hall-monitor/reports/ (or configured path). This provides a persistent history of all monitoring runs for review and dashboard generation.",
       "acceptanceCriteria": [
@@ -245,7 +245,7 @@
       "id": "OUTPUT-005",
       "category": "output",
       "priority": "P1",
-      "status": "in-progress",
+      "status": "done",
       "title": "HTML dashboard",
       "description": "After saving a run log, regenerate a self-contained HTML dashboard (index.html) in the reports directory. Shows the most recent run by default with a sidebar listing previous runs. Critical findings are highlighted with red indicators.",
       "acceptanceCriteria": [
