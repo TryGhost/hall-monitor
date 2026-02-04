@@ -11,8 +11,8 @@ export interface JsonFinding {
 	detectedAt: string;
 }
 
-export function printJsonReport(results: ClassificationResult[]): void {
-	const findings: JsonFinding[] = results
+export function buildJsonFindings(results: ClassificationResult[]): JsonFinding[] {
+	return results
 		.filter((r) => r.category !== "noise")
 		.map((r) => ({
 			topicId: r.topicId,
@@ -24,6 +24,9 @@ export function printJsonReport(results: ClassificationResult[]): void {
 			reasoning: r.reasoning,
 			detectedAt: new Date().toISOString(),
 		}));
+}
 
+export function printJsonReport(results: ClassificationResult[]): void {
+	const findings = buildJsonFindings(results);
 	console.log(JSON.stringify(findings, null, 2));
 }

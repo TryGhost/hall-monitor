@@ -4,7 +4,9 @@ import type { HallMonitorConfig } from "./config.js";
 import { DiscourseClient, resolveCategories } from "./discourse/client.js";
 import type { Topic, TopicDetails } from "./discourse/types.js";
 import { preFilterTopics } from "./filter.js";
-import { printJsonReport } from "./output/json.js";
+import { generateDashboard } from "./output/dashboard.js";
+import { buildJsonFindings, printJsonReport } from "./output/json.js";
+import { getReportsDir, loadRecentRuns, saveRunLog } from "./output/log-writer.js";
 import { printTerminalReport } from "./output/reporter.js";
 import {
 	closeDatabase,
@@ -173,11 +175,29 @@ export async function runMonitor(config: HallMonitorConfig): Promise<void> {
 			});
 		}
 
-		// 11. Log run end
+		// 11. Save run log and dashboard
+		if (!config.noLog) {
+			try {
+				const findings = buildJsonFindings(results);
+				const logPath = saveRunLog(config.reportsPath, findings, {
+					topicsChecked: topics.length,
+					findingsCount,
+				});
+				log(`Run log saved: ${logPath}`);
+				const reportsDir = getReportsDir(config.reportsPath);
+				const recentRuns = loadRecentRuns(config.reportsPath);
+				const dashboardPath = generateDashboard(reportsDir, recentRuns);
+				log(`Dashboard updated: ${dashboardPath}`);
+			} catch (err) {
+				log(`Warning: Failed to save run log: ${(err as Error).message}`);
+			}
+		}
+
+		// 12. Log run end
 		logRunEnd(db, runId, topics.length, findingsCount);
 		log(`Run #${runId} complete: ${topics.length} topics checked, ${findingsCount} findings`);
 	} finally {
-		// 12. Close database
+		// 13. Close database
 		closeDatabase(db);
 	}
 }

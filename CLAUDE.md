@@ -36,6 +36,8 @@ src/
   output/
     reporter.ts     — terminal output formatting
     json.ts         — structured JSON output
+    log-writer.ts   — run log persistence (JSON files)
+    dashboard.ts    — self-contained HTML dashboard generator
   monitor.ts        — orchestrator: fetch → filter → analyze → report
 ```
 

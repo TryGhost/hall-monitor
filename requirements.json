@@ -226,6 +226,39 @@
       ]
     },
     {
+      "id": "OUTPUT-004",
+      "category": "output",
+      "priority": "P1",
+      "status": "in-progress",
+      "title": "JSON run log files",
+      "description": "After every run, save the findings and run stats to a timestamped JSON file in ~/.hall-monitor/reports/ (or configured path). This provides a persistent history of all monitoring runs for review and dashboard generation.",
+      "acceptanceCriteria": [
+        "Writes run-YYYY-MM-DDTHH-MM-SS.json to reports directory after each run",
+        "Log contains timestamp, stats (topicsChecked, findingsCount), and findings array",
+        "Reports directory is configurable via reportsPath config option",
+        "Logging can be disabled via --skip-log flag or noLog config option",
+        "Silently skips corrupted log files when reading history",
+        "Filesystem-safe filenames (no colons)"
+      ]
+    },
+    {
+      "id": "OUTPUT-005",
+      "category": "output",
+      "priority": "P1",
+      "status": "in-progress",
+      "title": "HTML dashboard",
+      "description": "After saving a run log, regenerate a self-contained HTML dashboard (index.html) in the reports directory. Shows the most recent run by default with a sidebar listing previous runs. Critical findings are highlighted with red indicators.",
+      "acceptanceCriteria": [
+        "Generates index.html alongside run log files",
+        "Self-contained: no CDN dependencies, works on file:// protocol",
+        "Fixed sidebar (260px) with run history, scrollable main content",
+        "Red dot indicator on sidebar entries with critical findings",
+        "Findings grouped by severity (critical → high → medium → low) with color coding",
+        "Escapes embedded JSON to prevent HTML injection",
+        "Dashboard is regenerated on every run to include latest data"
+      ]
+    },
+    {
       "id": "CORE-003",
       "category": "core",
       "priority": "P1",

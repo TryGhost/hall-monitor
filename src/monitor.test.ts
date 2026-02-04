@@ -70,6 +70,8 @@ function makeConfig(overrides: Partial<HallMonitorConfig> = {}): HallMonitorConf
 		filterMinViews: 5,
 		filterMaxAgeDays: 30,
 		filterExcludeCategories: [],
+		reportsPath: null,
+		noLog: true,
 		...overrides,
 	};
 }
@@ -721,5 +723,58 @@ describe("monitor", () => {
 
 		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
 		expect(logs.some((l) => l.includes("Fetched 0 topics"))).toBe(true);
+	});
+
+	it("saves run log and generates dashboard when noLog is false", async () => {
+		const reportsDir = join(tempDir, "reports");
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([])));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			noLog: false,
+			reportsPath: reportsDir,
+		});
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Run log saved"))).toBe(true);
+		expect(logs.some((l) => l.includes("Dashboard updated"))).toBe(true);
+
+		// Verify files exist
+		const { readdirSync } = await import("node:fs");
+		const files = readdirSync(reportsDir);
+		expect(files.some((f: string) => f.startsWith("run-") && f.endsWith(".json"))).toBe(true);
+		expect(files.some((f: string) => f === "index.html")).toBe(true);
+	});
+
+	it("skips run log when noLog is true", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([])));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			noLog: true,
+		});
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Run log saved"))).toBe(false);
+		expect(logs.some((l) => l.includes("Dashboard updated"))).toBe(false);
+	});
+
+	it("continues gracefully if run log saving fails", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(makeResponse([])));
+
+		const config = makeConfig({
+			dbPath: join(tempDir, "test.db"),
+			noLog: false,
+			// Use an invalid path that will fail on write
+			reportsPath: "/dev/null/impossible/path",
+		});
+		await runMonitor(config);
+
+		const logs = stderrSpy.mock.calls.map((c) => c[0] as string);
+		expect(logs.some((l) => l.includes("Warning: Failed to save run log"))).toBe(true);
+		// Should still complete the run
+		expect(logs.some((l) => l.includes("complete"))).toBe(true);
 	});
 });

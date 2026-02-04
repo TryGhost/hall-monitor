@@ -17,6 +17,7 @@ program
 	.option("--db <path>", "Path to SQLite state database")
 	.option("--categories <slugs>", "Comma-separated category slugs or IDs to monitor")
 	.option("--tags <tags>", "Comma-separated tag names to monitor")
+	.option("--skip-log", "Skip saving run log and dashboard generation")
 	.action(async (opts) => {
 		try {
 			const config = resolveConfig({
@@ -29,6 +30,7 @@ program
 				db: opts.db,
 				categories: opts.categories,
 				tags: opts.tags,
+				skipLog: opts.skipLog,
 			});
 
 			await runMonitor(config);

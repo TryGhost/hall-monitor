@@ -261,6 +261,8 @@ describe("resolveConfig", () => {
 				filterMinViews: 5,
 				filterMaxAgeDays: 30,
 				filterExcludeCategories: [],
+				reportsPath: null,
+				noLog: false,
 			});
 		} finally {
 			process.chdir(originalCwd);

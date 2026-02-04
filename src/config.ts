@@ -17,6 +17,8 @@ export interface HallMonitorConfig {
 	filterMinViews: number;
 	filterMaxAgeDays: number;
 	filterExcludeCategories: number[];
+	reportsPath: string | null;
+	noLog: boolean;
 }
 
 const SEVERITY_LEVELS = ["critical", "high", "medium", "low"] as const;
@@ -38,6 +40,8 @@ const DEFAULT_CONFIG: Omit<HallMonitorConfig, "url"> = {
 	filterMinViews: 5,
 	filterMaxAgeDays: 30,
 	filterExcludeCategories: [],
+	reportsPath: null,
+	noLog: false,
 };
 
 const DEFAULT_CONFIG_FILENAME = ".hall-monitor.json";
@@ -174,6 +178,20 @@ function validatePartialConfig(raw: Record<string, unknown>): Partial<HallMonito
 		config.filterMaxAgeDays = raw.filterMaxAgeDays;
 	}
 
+	if (raw.reportsPath !== undefined) {
+		if (raw.reportsPath !== null && typeof raw.reportsPath !== "string") {
+			throw new Error("Config: 'reportsPath' must be a string or null");
+		}
+		config.reportsPath = raw.reportsPath as string | null;
+	}
+
+	if (raw.noLog !== undefined) {
+		if (typeof raw.noLog !== "boolean") {
+			throw new Error("Config: 'noLog' must be a boolean");
+		}
+		config.noLog = raw.noLog;
+	}
+
 	if (raw.filterExcludeCategories !== undefined) {
 		if (
 			!Array.isArray(raw.filterExcludeCategories) ||
@@ -197,6 +215,7 @@ export interface CliFlags {
 	db?: string;
 	categories?: string;
 	tags?: string;
+	skipLog?: boolean;
 }
 
 export function resolveConfig(flags: CliFlags): HallMonitorConfig {
@@ -241,6 +260,9 @@ export function resolveConfig(flags: CliFlags): HallMonitorConfig {
 			.split(",")
 			.map((s) => s.trim())
 			.filter((s) => s !== "");
+	}
+	if (flags.skipLog) {
+		merged.noLog = true;
 	}
 
 	if (!merged.url) {
