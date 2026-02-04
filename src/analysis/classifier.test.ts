@@ -6,6 +6,7 @@ import {
 	classifyTopic,
 	formatTopicMessage,
 	parseClassification,
+	stripCodeFences,
 } from "./classifier.js";
 
 vi.mock("@anthropic-ai/sdk", () => {
@@ -251,7 +252,36 @@ describe("formatTopicMessage", () => {
 	});
 });
 
+describe("stripCodeFences", () => {
+	it("strips ```json fences", () => {
+		expect(stripCodeFences('```json\n{"a": 1}\n```')).toBe('{"a": 1}');
+	});
+
+	it("strips bare ``` fences", () => {
+		expect(stripCodeFences('```\n{"a": 1}\n```')).toBe('{"a": 1}');
+	});
+
+	it("returns plain text unchanged", () => {
+		expect(stripCodeFences('{"a": 1}')).toBe('{"a": 1}');
+	});
+
+	it("trims surrounding whitespace", () => {
+		expect(stripCodeFences('  ```json\n{"a": 1}\n```  ')).toBe('{"a": 1}');
+	});
+});
+
 describe("parseClassification", () => {
+	it("parses JSON wrapped in code fences", () => {
+		const fenced = '```json\n{"category":"bug-report","severity":"high","summary":"A bug","reasoning":"Because"}\n```';
+		const result = parseClassification(fenced);
+		expect(result).toEqual({
+			category: "bug-report",
+			severity: "high",
+			summary: "A bug",
+			reasoning: "Because",
+		});
+	});
+
 	it("parses valid JSON", () => {
 		const result = parseClassification(
 			JSON.stringify({

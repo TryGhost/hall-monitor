@@ -80,10 +80,16 @@ type ParseSuccess = {
 type ParseFailure = { error: string };
 type ParseResult = ParseSuccess | ParseFailure;
 
+function stripCodeFences(text: string): string {
+	const trimmed = text.trim();
+	const match = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+	return match ? match[1].trim() : trimmed;
+}
+
 function parseClassification(text: string): ParseResult {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(text);
+		parsed = JSON.parse(stripCodeFences(text));
 	} catch {
 		return { error: "response is not valid JSON" };
 	}
@@ -181,4 +187,4 @@ export async function classifyTopic(
 	);
 }
 
-export { formatTopicMessage, parseClassification, MODEL_MAP };
+export { formatTopicMessage, parseClassification, stripCodeFences, MODEL_MAP };
