@@ -4,6 +4,8 @@ A CLI tool that monitors Discourse forums for open-source project maintainers. I
 
 Point it at a Discourse instance, run it periodically (cron, CI, or manually), and it tells you what matters.
 
+![Hall Monitor dashboard showing classified forum topics by severity](hall-monitor.png)
+
 ## How It Works
 
 Hall Monitor connects to a Discourse forum's public API, fetches recent topics, and uses Claude (via the Anthropic API) to classify and summarize what it finds. A local SQLite database tracks what's already been seen, so each run picks up where the last one left off.
