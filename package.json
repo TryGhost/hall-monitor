@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.87.0",
-    "better-sqlite3": "11.10.0",
+    "better-sqlite3": "12.8.0",
     "commander": "13.1.0"
   },
   "devDependencies": {
