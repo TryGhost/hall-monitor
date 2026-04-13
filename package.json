@@ -28,7 +28,7 @@
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "24.12.2",
     "tsup": "8.5.1",
-    "typescript": "5.9.3",
+    "typescript": "6.0.2",
     "vitest": "3.2.4"
   }
 }
